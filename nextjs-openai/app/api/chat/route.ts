@@ -1,35 +1,41 @@
-import { NextRequest, NextResponse } from "next/server";
-import { OpenAI } from "openai";
+import { streamText, UIMessage } from 'ai';
+import { openai } from '@ai-sdk/openai';
 
-export async function POST(request: NextRequest) {
-  const { messages } = await request.json();
+export async function POST(request: Request) {
+  const { messages }: { messages: UIMessage[] } = await request.json();
 
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
-    return NextResponse.json({ error: "Messages are required" }, { status: 400 });
+    return new Response(JSON.stringify({ error: "Messages are required" }), { 
+      status: 400,
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
 
   try {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ error: "OpenAI API key is required" }, { status: 500 });
+      return new Response(JSON.stringify({ error: "OpenAI API key is required" }), { 
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      });
     }
-    const openai = new OpenAI({
-      apiKey,
-    });
 
+    // Truncate to the last 8 messages
     let truncatedMessages = messages.slice(-8);
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
+    const result = streamText({
+      model: openai('gpt-4o'),
+      system: 'You are a helpful assistant.',
       messages: truncatedMessages,
-      max_tokens: 500,
+      maxTokens: 500,
     });
 
-    const answer = response.choices[0].message.content.trim();
-
-    return NextResponse.json({ answer });
+    return result.toDataStreamResponse();
   } catch (error) {
     console.error(error);
-    return NextResponse.json({ error: "Failed to get response from OpenAI" }, { status: 500 });
+    return new Response(JSON.stringify({ error: "Failed to get response from OpenAI" }), { 
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
 }

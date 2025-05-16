@@ -1,17 +1,8 @@
 import { config } from "dotenv";
-import OpenAI from "openai";
+import { openai } from '@ai-sdk/openai';
+import { CoreMessage, generateText } from 'ai';
 import { Context, Telegraf } from "telegraf";
 import { message } from "telegraf/filters";
-
-export type ChatMessage =
-  | {
-      role: "user";
-      content: string;
-    }
-  | {
-      role: "assistant";
-      content: string;
-    };
 
 async function connectToTelegram() {
   const telegraf = new Telegraf<Context>(process.env.TELEGRAM_TOKEN!);
@@ -33,11 +24,8 @@ async function run() {
   if (!apiKey) {
     throw new Error("OpenAI API key is required");
   }
-  const openai = new OpenAI({
-    apiKey,
-  });
 
-  let messages: ChatMessage[] = [];
+  let messages: CoreMessage[] = [];
 
   const telegram = await connectToTelegram();
 
@@ -49,12 +37,11 @@ async function run() {
     messages.push({ role: "user", content });
     messages = messages.slice(-8);
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages,
+    const { text: answer } = await generateText({
+      model: openai("gpt-4o-mini-2024-07-18"),
+      messages
     });
 
-    const answer = response.choices[0].message.content;
     if (!answer) {
       return;
     }

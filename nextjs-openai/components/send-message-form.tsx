@@ -1,35 +1,28 @@
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { ChangeEvent } from "react";
 import ReactTextareaAutosize from "react-textarea-autosize";
-import AnimatedEllipsis from "./animated-ellipsis";
 import { Button } from "./button";
 
 export default function SendMessageForm({
   isThinking,
+  message,
+  setMessage,
   onSendMessage,
 }: {
   isThinking: boolean;
-  onSendMessage: (message: string) => Promise<void>;
+  message: string;
+  setMessage: (e: ChangeEvent<HTMLTextAreaElement>) => void;
+  onSendMessage: () => Promise<void>;
 }) {
-  const [message, setMessage] = useState("");
-
   const handleSubmit = async () => {
     const value = message.trim();
     if (!value) return;
 
-    setMessage("");
-    await onSendMessage(value);
+    await onSendMessage();
   };
 
   return (
     <div>
-      {isThinking && (
-        <span className="w-52 inline-block rounded-full text-sm text-muted-foreground pl-4 p-2 mb-1 bg-background">
-          Thinking...
-          <AnimatedEllipsis />
-        </span>
-      )}
-
       <form
         className="flex gap-4"
         onSubmit={async (e) => {
@@ -42,7 +35,7 @@ export default function SendMessageForm({
           maxRows={8}
           rows={1}
           value={message}
-          onChange={(e) => setMessage(e.target.value)}
+          onChange={setMessage}
           placeholder="Type here!"
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {

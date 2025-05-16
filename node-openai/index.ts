@@ -1,6 +1,14 @@
 import { config } from "dotenv";
-import OpenAI from "openai";
+import { openai } from '@ai-sdk/openai';
+import { generateObject } from 'ai';
+import { z } from 'zod';
 import readline from "readline";
+
+const grammarSchema = z.object({
+  subject: z.string().describe("The subject of the sentence"),
+  verb: z.string().describe("The verb of the sentence"),
+  object: z.string().describe("The object of the sentence")
+});
 
 async function run() {
   config();
@@ -9,9 +17,6 @@ async function run() {
   if (!apiKey) {
     throw new Error("OpenAI API key is required");
   }
-  const openai = new OpenAI({
-    apiKey,
-  });
 
   const rl = readline.createInterface({
     input: process.stdin,
@@ -20,35 +25,14 @@ async function run() {
 
   async function readUserInput() {
     rl.question("Write a phrase: ", async (message) => {
-      const response = await openai.chat.completions.create({
-        model: "gpt-3.5-turbo",
-        messages: [
-          {
-            role: "user",
-            content: `
-Breakdown the following phrase into a grammatical analysis: ${message}.
-
-Use the following format:
-{
-  "subject": "The subject of the sentence",
-  "verb": "The verb of the sentence",
-  "object": "The object of the sentence"
-}
-`.trim(),
-          },
-        ],
-        max_tokens: 100,
+      const { object } = await generateObject({
+        model: openai("gpt-4o-mini-2024-07-18"),
+        system: "You are a grammar analysis expert. Break down sentences into their grammatical components.",
+        prompt: `Analyze this phrase: ${message}`,
+        schema: grammarSchema
       });
 
-      const answer = response.choices[0].message.content?.trim();
-      if (!answer) {
-        console.log("No answer found");
-        return;
-      }
-
-      const analysis = JSON.parse(answer);
-      console.log(analysis);
-      console.log();
+      console.log(object);
 
       readUserInput();
     });
