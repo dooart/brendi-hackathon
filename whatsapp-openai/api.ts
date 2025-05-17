@@ -2,6 +2,7 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
 import { sendText } from './utils';
+import { generateAnswer } from './services';
 
 const app = express();
 const port = 3000;
@@ -24,7 +25,10 @@ app.post('/log', async (req, res) => {
         return res.status(400).json({ error: 'Nenhuma mensagem recebida' });
     }
 
-    await sendText(phone, message);
+    const answer = await generateAnswer(message);
+    console.log(`answer: ${answer}`);
+
+    await sendText(phone, answer);
 
     res.json({ message: 'Mensagem recebida com sucesso!' });
 });
