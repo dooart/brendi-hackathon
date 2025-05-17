@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import readlineSync from "readline-sync";
 import { Message, Conversation } from "./types";
 import { startNoteDetection, Note } from "./notes";
+import { NoteDatabase } from "./database";
 
 // Command types and constants
 type Command = {
@@ -132,13 +133,68 @@ const handleHelp = async (conversation: Conversation): Promise<Conversation> => 
   ];
 };
 
-const commands: Command[] = [
-  {
-    name: 'help',
-    description: 'Show available commands',
-    execute: handleHelp
+// Note handling
+const handleNoteCreated = (note: Note, db: NoteDatabase): void => {
+  // Save note to database
+  db.saveNote(note);
+
+  // Display note information
+  console.log("\n📝 New note created!");
+  console.log(`Title: ${note.title}`);
+  console.log(`Tags: ${note.tags.join(", ")}`);
+  console.log("\nContent:");
+  console.log(note.content);
+  console.log("\n---");
+};
+
+// Add note-related commands
+const handleListNotes = async (conversation: Conversation, db: NoteDatabase): Promise<Conversation> => {
+  const notes = db.getAllNotes();
+  
+  if (notes.length === 0) {
+    displayMessage("No notes found.");
+    return [
+      ...conversation,
+      createAssistantMessage("No notes found.")
+    ];
   }
-];
+
+  const noteList = notes.map(note => 
+    `- ${note.title} (${note.tags.join(", ")})`
+  ).join("\n");
+
+  displayMessage(`Found ${notes.length} notes:\n${noteList}`);
+  return [
+    ...conversation,
+    createAssistantMessage(`Found ${notes.length} notes:\n${noteList}`)
+  ];
+};
+
+const handleSearchNotes = async (
+  conversation: Conversation,
+  db: NoteDatabase,
+  query: string
+): Promise<Conversation> => {
+  const notes = db.getNotesByTag(query);
+  
+  if (notes.length === 0) {
+    displayMessage(`No notes found with tag: ${query}`);
+    return [
+      ...conversation,
+      createAssistantMessage(`No notes found with tag: ${query}`)
+    ];
+  }
+
+  const noteList = notes.map(note => 
+    `- ${note.title} (${note.tags.join(", ")})`
+  ).join("\n");
+
+  displayMessage(`Found ${notes.length} notes with tag "${query}":\n${noteList}`);
+  return [
+    ...conversation,
+    createAssistantMessage(`Found ${notes.length} notes with tag "${query}":\n${noteList}`)
+  ];
+};
 
 // Command handling functions
 const isExitCommand = (input: string): boolean =>
@@ -147,13 +203,14 @@ const isExitCommand = (input: string): boolean =>
 const isHelpCommand = (input: string): boolean =>
   input.toLowerCase() === HELP_COMMAND;
 
-const getCommand = (input: string): Command | undefined =>
+const getCommand = (input: string, commands: Command[]): Command | undefined =>
   commands.find(cmd => cmd.name === input.toLowerCase());
 
 // Update the handleConversation function
 const handleConversation = async (
   openai: OpenAI,
-  conversation: Conversation
+  conversation: Conversation,
+  commands: Command[]
 ): Promise<Conversation> => {
   const userInput = getUserInput();
 
@@ -165,7 +222,7 @@ const handleConversation = async (
     return handleHelp(conversation);
   }
 
-  const command = getCommand(userInput);
+  const command = commands.find(cmd => cmd.name === userInput.toLowerCase());
   if (command) {
     return command.execute(conversation);
   }
@@ -184,16 +241,6 @@ const handleConversation = async (
   ];
 };
 
-// Note handling
-const handleNoteCreated = (note: Note): void => {
-  console.log("\n📝 New note created!");
-  console.log(`Title: ${note.title}`);
-  console.log(`Tags: ${note.tags.join(", ")}`);
-  console.log("\nContent:");
-  console.log(note.content);
-  console.log("\n---");
-};
-
 // Update the main function
 const main = async (): Promise<void> => {
   config();
@@ -204,25 +251,53 @@ const main = async (): Promise<void> => {
   }
 
   const openai = createOpenAIClient(apiKey);
+  const db = new NoteDatabase();
   let conversation: Conversation = [];
   const conversationId = `conv_${Date.now()}`;
 
-  // Start note detection
-  const noteDetector = startNoteDetection(openai, handleNoteCreated);
+  // Define commands with access to db
+  const commands: Command[] = [
+    {
+      name: 'help',
+      description: 'Show available commands',
+      execute: handleHelp
+    },
+    {
+      name: 'notes',
+      description: 'List all notes',
+      execute: (conv) => handleListNotes(conv, db)
+    },
+    {
+      name: 'search',
+      description: 'Search notes by tag',
+      execute: (conv) => {
+        const tag = readlineSync.question("Enter tag to search: ");
+        return handleSearchNotes(conv, db, tag);
+      }
+    }
+  ];
+
+  // Start note detection with database integration
+  const noteDetector = startNoteDetection(openai, (note) => handleNoteCreated(note, db));
 
   displayWelcome();
 
-  while (true) {
-    conversation = await handleConversation(openai, conversation);
-    
-    // Process conversation for notes
-    await noteDetector.process(conversation, conversationId);
+  try {
+    while (true) {
+      conversation = await handleConversation(openai, conversation, commands);
+      
+      // Process conversation for notes
+      await noteDetector.process(conversation, conversationId);
 
-    if (conversation.length > 0 && 
-        conversation[conversation.length - 1].content === "Goodbye! Happy studying!") {
-      noteDetector.stop();
-      break;
+      if (conversation.length > 0 && 
+          conversation[conversation.length - 1].content === "Goodbye! Happy studying!") {
+        noteDetector.stop();
+        break;
+      }
     }
+  } finally {
+    // Ensure database is closed
+    db.close();
   }
 };
 
