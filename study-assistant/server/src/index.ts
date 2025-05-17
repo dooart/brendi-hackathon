@@ -1,98 +1,95 @@
-import express, { Request, Response } from 'express';
+import express from 'express';
 import cors from 'cors';
-import { config } from 'dotenv';
-import { createOpenAIClient, getAIResponse } from './openai';
-import { NoteDatabase } from './database';
+import dotenv from 'dotenv';
+import { OpenAI } from 'openai';
 import { DocumentManager } from './documents';
+import { startNoteDetection, Note } from './notes';
 
-// Load environment variables
-config();
+dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3001;
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 
-// Initialize services
-const apiKey = process.env.OPENAI_API_KEY;
-if (!apiKey) {
-  throw new Error('OpenAI API key is required');
-}
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
-const db = new NoteDatabase();
-const docManager = new DocumentManager(apiKey, db);
-let conversation: { role: 'user' | 'assistant'; content: string }[] = [];
+const docManager = new DocumentManager();
+let lastCreatedNote: Note | null = null;
 
-// Chat endpoint
-app.post('/api/chat', async (req: Request, res: Response) => {
+// Initialize note detection system
+const noteDetection = startNoteDetection(openai, (note: Note) => {
+  lastCreatedNote = note;
+  console.log('Note created:', note.title);
+});
+
+app.post('/api/chat', async (req, res) => {
   try {
     const { message } = req.body;
     if (!message) {
       return res.status(400).json({ error: 'Message is required' });
     }
 
-    // Add user message to conversation
-    conversation.push({ role: 'user', content: message });
+    const response = await openai.chat.completions.create({
+      model: "gpt-4-turbo-preview",
+      messages: [
+        {
+          role: "system",
+          content: "You are a helpful study assistant. Format your responses using markdown for better readability. Use code blocks, bullet points, and text emphasis where appropriate."
+        },
+        {
+          role: "user",
+          content: message
+        }
+      ],
+      temperature: 0.7,
+      max_tokens: 500
+    });
 
-    // Get AI response
-    const openai = createOpenAIClient(apiKey);
-    const response = await getAIResponse(openai, conversation, docManager);
-
-    // Add assistant response to conversation
-    conversation.push({ role: 'assistant', content: response });
-
-    // Keep only last 10 messages
-    if (conversation.length > 10) {
-      conversation = conversation.slice(-10);
+    const aiResponse = response.choices[0].message.content;
+    if (!aiResponse) {
+      throw new Error('No response from OpenAI');
     }
 
-    res.json({ response });
+    // Process the response for note detection
+    await noteDetection.process(
+      [
+        { role: 'user', content: message },
+        { role: 'assistant', content: aiResponse }
+      ],
+      Date.now().toString()
+    );
+
+    // Send response with note if one was created
+    const responseData: { message: string; note?: Note } = {
+      message: aiResponse
+    };
+
+    if (lastCreatedNote) {
+      responseData.note = lastCreatedNote;
+      lastCreatedNote = null;
+    }
+
+    res.json(responseData);
   } catch (error) {
     console.error('Error in chat endpoint:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: 'Failed to process chat message' });
   }
 });
 
-// Document management endpoints
-app.post('/api/documents/load', async (req: Request, res: Response) => {
+app.get('/api/notes', (req, res) => {
   try {
-    const { filePath } = req.body;
-    if (!filePath) {
-      return res.status(400).json({ error: 'File path is required' });
-    }
-
-    await docManager.loadPDF(filePath);
-    res.json({ message: 'Document loaded successfully' });
+    // TODO: Implement note retrieval
+    res.json({ notes: [] });
   } catch (error) {
-    console.error('Error loading document:', error);
-    res.status(500).json({ error: 'Failed to load document' });
+    console.error('Error retrieving notes:', error);
+    res.status(500).json({ error: 'Failed to retrieve notes' });
   }
 });
 
-app.get('/api/documents', (req: Request, res: Response) => {
-  try {
-    const documents = docManager.getLoadedDocuments();
-    res.json({ documents });
-  } catch (error) {
-    console.error('Error listing documents:', error);
-    res.status(500).json({ error: 'Failed to list documents' });
-  }
-});
-
-app.delete('/api/documents/:fileName', async (req: Request, res: Response) => {
-  try {
-    const { fileName } = req.params;
-    await docManager.removeDocument(fileName);
-    res.json({ message: 'Document removed successfully' });
-  } catch (error) {
-    console.error('Error removing document:', error);
-    res.status(500).json({ error: 'Failed to remove document' });
-  }
-});
-
-// Start server
 app.listen(port, () => {
   console.log(`Server running at http://localhost:${port}`);
 }); 

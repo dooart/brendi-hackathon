@@ -1,10 +1,24 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import './App.css';
 
 interface Message {
   role: 'user' | 'assistant';
   content: string;
+}
+
+interface Note {
+  id: string;
+  title: string;
+  content: string;
+  tags: string[];
+  relatedNotes: string[];
+  createdAt: Date;
+  lastModified: Date;
+  source: {
+    conversationId: string;
+    messageIndex: number;
+  };
 }
 
 function App() {
@@ -36,8 +50,17 @@ function App() {
       }
 
       const data = await response.json();
-      const assistantMessage: Message = { role: 'assistant', content: data.response };
+      const assistantMessage: Message = { role: 'assistant', content: data.message };
       setMessages(prev => [...prev, assistantMessage]);
+
+      // Check if a note was created
+      if (data.note) {
+        const noteMessage: Message = {
+          role: 'assistant',
+          content: `📝 **New Note Created!**\n\n**${data.note.title}**\n${data.note.content}\n\nTags: ${data.note.tags.join(', ')}`
+        };
+        setMessages(prev => [...prev, noteMessage]);
+      }
     } catch (error) {
       console.error('Error:', error);
       const errorMessage: Message = {
@@ -49,6 +72,16 @@ function App() {
       setIsLoading(false);
     }
   };
+
+  // Add initial welcome message
+  useEffect(() => {
+    setMessages([{
+      role: 'assistant',
+      content: `Welcome to the Study Assistant! I can help you with your studies and automatically create notes from our conversation when I detect important information.
+
+The notes will be displayed in the chat with proper formatting and tags. You can continue our conversation naturally, and I'll create notes when I identify key concepts, definitions, or important information.`
+    }]);
+  }, []);
 
   return (
     <div className="app">

@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { Document } from 'langchain/document';
 import path from 'path';
+import { Note } from './notes';
 
 export class NoteDatabase {
   private db: Database.Database;
@@ -27,6 +28,18 @@ export class NoteDatabase {
         embedding BLOB,
         FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS notes (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        tags TEXT NOT NULL,
+        related_notes TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        last_modified TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,
+        message_index INTEGER NOT NULL
+      )
     `);
   }
 
@@ -96,4 +109,94 @@ export class NoteDatabase {
   public close(): void {
     this.db.close();
   }
-} 
+
+  public saveNote(note: Note): void {
+    this.db.prepare(`
+      INSERT OR REPLACE INTO notes (
+        id, title, content, tags, related_notes,
+        created_at, last_modified, conversation_id, message_index
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      note.id,
+      note.title,
+      note.content,
+      JSON.stringify(note.tags),
+      JSON.stringify(note.relatedNotes),
+      note.createdAt.toISOString(),
+      note.lastModified.toISOString(),
+      note.source.conversationId,
+      note.source.messageIndex
+    );
+  }
+
+  public getNote(id: string): Note | null {
+    const note = this.db.prepare(`
+      SELECT * FROM notes WHERE id = ?
+    `).get(id) as NoteRow | undefined;
+
+    if (!note) return null;
+
+    return {
+      id: note.id,
+      title: note.title,
+      content: note.content,
+      tags: JSON.parse(note.tags),
+      relatedNotes: JSON.parse(note.related_notes),
+      createdAt: new Date(note.created_at),
+      lastModified: new Date(note.last_modified),
+      source: {
+        conversationId: note.conversation_id,
+        messageIndex: note.message_index
+      }
+    };
+  }
+
+  public getNotesByTag(tag: string): Note[] {
+    const notes = this.db.prepare(`
+      SELECT * FROM notes WHERE tags LIKE ?
+    `).all(`%${tag}%`) as NoteRow[];
+
+    return notes.map(note => ({
+      id: note.id,
+      title: note.title,
+      content: note.content,
+      tags: JSON.parse(note.tags),
+      relatedNotes: JSON.parse(note.related_notes),
+      createdAt: new Date(note.created_at),
+      lastModified: new Date(note.last_modified),
+      source: {
+        conversationId: note.conversation_id,
+        messageIndex: note.message_index
+      }
+    }));
+  }
+
+  public getAllNotes(): Note[] {
+    const notes = this.db.prepare('SELECT * FROM notes').all() as NoteRow[];
+    return notes.map(note => ({
+      id: note.id,
+      title: note.title,
+      content: note.content,
+      tags: JSON.parse(note.tags),
+      relatedNotes: JSON.parse(note.related_notes),
+      createdAt: new Date(note.created_at),
+      lastModified: new Date(note.last_modified),
+      source: {
+        conversationId: note.conversation_id,
+        messageIndex: note.message_index
+      }
+    }));
+  }
+}
+
+type NoteRow = {
+  id: string;
+  title: string;
+  content: string;
+  tags: string;
+  related_notes: string;
+  created_at: string;
+  last_modified: string;
+  conversation_id: string;
+  message_index: number;
+}; 
