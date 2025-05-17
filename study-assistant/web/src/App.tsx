@@ -1,32 +1,18 @@
-import { useState, useEffect } from 'react';
-import ReactMarkdown from 'react-markdown';
-import { NotesPanel } from './components/NotesPanel';
+import React, { useState, useEffect, useRef } from 'react';
+import { ChatPanel } from './components/ChatPanel';
+import NotesPanel from './components/NotesPanel';
+import { ZettelkastenView } from './components/ZettelkastenView';
+import { Message, Note } from './types';
 import './App.css';
-
-interface Message {
-  role: 'user' | 'assistant';
-  content: string;
-}
-
-interface Note {
-  id: string;
-  title: string;
-  content: string;
-  tags: string[];
-  relatedNotes: string[];
-  createdAt: Date;
-  lastModified: Date;
-  source: {
-    conversationId: string;
-    messageIndex: number;
-  };
-}
 
 function App() {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [activeTab, setActiveTab] = useState<'chat' | 'zettelkasten'>('chat');
+  const [selectedNote, setSelectedNote] = useState<Note | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
 
   const fetchNotes = async () => {
     try {
@@ -51,11 +37,12 @@ function App() {
         throw new Error('Failed to delete note');
       }
 
-      // Remove the note from the local state
       setNotes(prevNotes => prevNotes.filter(note => note.id !== noteId));
+      if (selectedNoteId === noteId) {
+        setSelectedNoteId(null);
+      }
     } catch (error) {
       console.error('Error deleting note:', error);
-      // You might want to show an error message to the user here
     }
   };
 
@@ -63,23 +50,20 @@ function App() {
     fetchNotes();
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim()) return;
+  const handleSendMessage = async (message: string) => {
+    if (!message.trim()) return;
 
-    // Add user message
-    const userMessage: Message = { role: 'user', content: input };
-    setMessages(prev => [...prev, userMessage]);
-    setInput('');
     setIsLoading(true);
-
     try {
+      const newMessage: Message = { role: 'user', content: message };
+      setMessages(prev => [...prev, newMessage]);
+
       const response = await fetch('http://localhost:3001/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ message: input }),
+        body: JSON.stringify({ message }),
       });
 
       if (!response.ok) {
@@ -87,7 +71,7 @@ function App() {
       }
 
       const data = await response.json();
-      const assistantMessage: Message = { role: 'assistant', content: data.message };
+      const assistantMessage: Message = { role: 'assistant', content: data.response };
       setMessages(prev => [...prev, assistantMessage]);
 
       // Check if a note was created
@@ -101,7 +85,7 @@ function App() {
         fetchNotes();
       }
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error sending message:', error);
       const errorMessage: Message = {
         role: 'assistant',
         content: 'Sorry, I encountered an error. Please try again.',
@@ -122,42 +106,50 @@ The notes will be displayed in the chat with proper formatting and tags. You can
     }]);
   }, []);
 
+  const handleNoteClick = (note: Note) => {
+    setSelectedNote(note);
+  };
+
   return (
     <div className="app">
-      <NotesPanel notes={notes} onDeleteNote={handleDeleteNote} />
-      <div className="chat-container">
-        <div className="messages">
-          {messages.map((message, index) => (
-            <div key={index} className={`message ${message.role}`}>
-              {message.role === 'assistant' ? (
-                <ReactMarkdown>{message.content}</ReactMarkdown>
-              ) : (
-                message.content
-              )}
-            </div>
-          ))}
-          {isLoading && (
-            <div className="message assistant typing">
-              <div className="typing-indicator">
-                <span></span>
-                <span></span>
-                <span></span>
-              </div>
-            </div>
-          )}
-        </div>
-        <form className="input-form" onSubmit={handleSubmit}>
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Type your message..."
-            disabled={isLoading}
-          />
-          <button type="submit" className="send-button" disabled={isLoading}>
-            Send
+      <div className="sidebar">
+        <div className="tab-buttons">
+          <button
+            className={`tab-button ${activeTab === 'chat' ? 'active' : ''}`}
+            onClick={() => setActiveTab('chat')}
+          >
+            Chat
           </button>
-        </form>
+          <button
+            className={`tab-button ${activeTab === 'zettelkasten' ? 'active' : ''}`}
+            onClick={() => setActiveTab('zettelkasten')}
+          >
+            Zettelkasten
+          </button>
+        </div>
+        
+        {activeTab === 'chat' ? (
+          <ChatPanel
+            messages={messages}
+            isLoading={isLoading}
+            onSendMessage={handleSendMessage}
+            messagesEndRef={messagesEndRef}
+          />
+        ) : (
+          <ZettelkastenView
+            notes={notes}
+            onNoteClick={handleNoteClick}
+          />
+        )}
+      </div>
+      
+      <div className="main-content">
+        <NotesPanel
+          notes={notes}
+          onDeleteNote={handleDeleteNote}
+          selectedNoteId={selectedNoteId}
+          onSelectNote={setSelectedNoteId}
+        />
       </div>
     </div>
   );
