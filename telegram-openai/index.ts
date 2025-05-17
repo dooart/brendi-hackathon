@@ -46,6 +46,8 @@ async function run() {
       return;
     }
 
+    messages.push({ role: "assistant", content: answer });
+    
     await telegram.telegram.sendMessage(Number(telegramChatId), answer);
   });
 }
