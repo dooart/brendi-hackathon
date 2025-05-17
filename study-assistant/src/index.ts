@@ -1,14 +1,8 @@
 import { config } from "dotenv";
 import OpenAI from "openai";
 import readlineSync from "readline-sync";
-
-// Types
-type Message = {
-  role: "user" | "assistant" | "system";
-  content: string;
-};
-
-type Conversation = Message[];
+import { Message, Conversation } from "./types";
+import { startNoteDetection, Note } from "./notes";
 
 // Command types and constants
 type Command = {
@@ -190,7 +184,17 @@ const handleConversation = async (
   ];
 };
 
-// Main function
+// Note handling
+const handleNoteCreated = (note: Note): void => {
+  console.log("\n📝 New note created!");
+  console.log(`Title: ${note.title}`);
+  console.log(`Tags: ${note.tags.join(", ")}`);
+  console.log("\nContent:");
+  console.log(note.content);
+  console.log("\n---");
+};
+
+// Update the main function
 const main = async (): Promise<void> => {
   config();
   
@@ -201,13 +205,22 @@ const main = async (): Promise<void> => {
 
   const openai = createOpenAIClient(apiKey);
   let conversation: Conversation = [];
+  const conversationId = `conv_${Date.now()}`;
+
+  // Start note detection
+  const noteDetector = startNoteDetection(openai, handleNoteCreated);
 
   displayWelcome();
 
   while (true) {
     conversation = await handleConversation(openai, conversation);
+    
+    // Process conversation for notes
+    await noteDetector.process(conversation, conversationId);
+
     if (conversation.length > 0 && 
         conversation[conversation.length - 1].content === "Goodbye! Happy studying!") {
+      noteDetector.stop();
       break;
     }
   }
