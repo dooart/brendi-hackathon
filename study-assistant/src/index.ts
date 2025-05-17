@@ -5,6 +5,7 @@ import { Message, Conversation } from "./types";
 import { startNoteDetection, Note } from "./notes";
 import { NoteDatabase } from "./database";
 import { ReviewMode } from './review';
+import { DocumentManager } from "./documents";
 
 // Command types and constants
 type Command = {
@@ -38,6 +39,15 @@ const systemMessage: Message = {
     "- Check for understanding",
     "- Encourage questions",
     "",
+    "You have access to the following study materials:",
+    "{DOCUMENTS}",
+    "",
+    "When answering questions:",
+    "- First search through the available documents for relevant information",
+    "- If you find relevant information, use it to provide accurate answers",
+    "- If you don't find relevant information, explain that you don't have that specific information in the available materials",
+    "- Always cite the source document when using information from it",
+    "",
     "Remember to be patient and adapt your explanations to the student's level of understanding."
   ].join('\n')
 };
@@ -59,10 +69,24 @@ const getLastMessages = (conversation: Conversation, count: number): Conversatio
 const shouldExit = (input: string): boolean =>
   input.toLowerCase() === "exit";
 
-const formatMessages = (conversation: Conversation): Message[] => [
-  systemMessage,
-  ...getLastMessages(conversation, 6)
-];
+const formatMessages = (conversation: Conversation, docManager: DocumentManager): Message[] => {
+  // Get list of loaded documents
+  const documents = docManager.getLoadedDocuments();
+  const documentList = documents.length > 0 
+    ? documents.map(doc => `- ${doc}`).join('\n')
+    : "No documents currently loaded.";
+
+  // Replace {DOCUMENTS} placeholder in system message
+  const updatedSystemMessage = {
+    ...systemMessage,
+    content: systemMessage.content.replace('{DOCUMENTS}', documentList)
+  };
+
+  return [
+    updatedSystemMessage,
+    ...getLastMessages(conversation, 6)
+  ];
+};
 
 // IO functions
 const getUserInput = (): string =>
@@ -88,12 +112,13 @@ const displayGoodbye = (): void =>
 // OpenAI interaction
 const getAIResponse = async (
   openai: OpenAI,
-  conversation: Conversation
+  conversation: Conversation,
+  docManager: DocumentManager
 ): Promise<string> => {
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-4.1-mini",
-      messages: formatMessages(conversation),
+      messages: formatMessages(conversation, docManager),
       temperature: 0.7,
       max_tokens: 500,
     });
@@ -124,6 +149,12 @@ const handleHelp = async (): Promise<string> => {
     "  stats   - Show review session statistics",
     "  notes   - List all notes",
     "  search  - Search notes by tag",
+    "",
+    "Document commands:",
+    "  load <file>  - Load a PDF document into the knowledge base",
+    "  docs         - List all loaded documents",
+    "  remove <doc> - Remove a document from the knowledge base",
+    "  search <q>   - Search through loaded documents",
     "",
     "You can also just type your questions or topics to discuss!"
   ].join('\n');
@@ -178,6 +209,63 @@ const handleSearchNotes = async (
   return `Found ${notes.length} notes with tag "${query}":\n${noteList}`;
 };
 
+// Add document-related commands
+const handleLoadDocument = async (
+  docManager: DocumentManager,
+  filePath: string
+): Promise<string> => {
+  try {
+    await docManager.loadPDF(filePath);
+    return `Successfully loaded document: ${filePath}`;
+  } catch (error) {
+    return `Error loading document: ${error}`;
+  }
+};
+
+const handleListDocuments = async (
+  docManager: DocumentManager
+): Promise<string> => {
+  const documents = docManager.getLoadedDocuments();
+  if (documents.length === 0) {
+    return "No documents loaded.";
+  }
+  return `Loaded documents:\n${documents.map(doc => `- ${doc}`).join("\n")}`;
+};
+
+const handleRemoveDocument = async (
+  docManager: DocumentManager,
+  fileName: string
+): Promise<string> => {
+  try {
+    await docManager.removeDocument(fileName);
+    return `Successfully removed document: ${fileName}`;
+  } catch (error) {
+    return `Error removing document: ${error}`;
+  }
+};
+
+const handleSearchDocuments = async (
+  docManager: DocumentManager,
+  query: string
+): Promise<string> => {
+  try {
+    const results = await docManager.searchDocuments(query);
+    if (results.length === 0) {
+      return "No relevant information found in the documents.";
+    }
+    
+    const formattedResults = results.map((doc, i) => {
+      const source = doc.metadata.source as string;
+      const page = doc.metadata.page as number;
+      return `[${i + 1}] From ${source} (Page ${page}):\n${doc.pageContent}\n`;
+    }).join("\n");
+    
+    return `Found ${results.length} relevant sections:\n\n${formattedResults}`;
+  } catch (error) {
+    return `Error searching documents: ${error}`;
+  }
+};
+
 // Command handling functions
 const isExitCommand = (input: string): boolean =>
   EXIT_COMMANDS.includes(input.toLowerCase());
@@ -185,8 +273,26 @@ const isExitCommand = (input: string): boolean =>
 const isHelpCommand = (input: string): boolean =>
   input.toLowerCase() === HELP_COMMAND;
 
-const getCommand = (input: string, commands: Command[]): Command | undefined =>
-  commands.find(cmd => cmd.name === input.toLowerCase());
+const parseCommand = (input: string): { command: string; args: string[] } => {
+  // First, handle the load command specially to preserve file paths
+  if (input.toLowerCase().startsWith('load ')) {
+    const command = 'load';
+    // Get everything after 'load ' as a single argument
+    let filePath = input.slice(5).trim();
+    // Remove surrounding quotes if they exist
+    if ((filePath.startsWith("'") && filePath.endsWith("'")) || 
+        (filePath.startsWith('"') && filePath.endsWith('"'))) {
+      filePath = filePath.slice(1, -1);
+    }
+    return { command, args: [filePath] };
+  }
+
+  // For other commands, split by spaces
+  const parts = input.trim().split(/\s+/);
+  const command = parts[0].toLowerCase();
+  const args = parts.slice(1);
+  return { command, args };
+};
 
 // Update the main function
 const main = async (): Promise<void> => {
@@ -200,10 +306,11 @@ const main = async (): Promise<void> => {
   const openai = createOpenAIClient(apiKey);
   const db = new NoteDatabase();
   const reviewMode = new ReviewMode(db);
+  const docManager = new DocumentManager(apiKey, db);
   let isInReviewMode = false;
   let conversation: Conversation = [];
 
-  // Define commands with access to db
+  // Define commands with access to db and docManager
   const commands: Command[] = [
     {
       name: "help",
@@ -256,6 +363,43 @@ const main = async (): Promise<void> => {
         const tag = args[1] || readlineSync.question("Enter tag to search: ");
         return await handleSearchNotes(db, tag);
       }
+    },
+    {
+      name: "load",
+      description: "Load a PDF document into the knowledge base",
+      execute: async (args) => {
+        if (args.length === 0) {
+          return "Please provide a file path to load.";
+        }
+        return await handleLoadDocument(docManager, args[0]);
+      }
+    },
+    {
+      name: "docs",
+      description: "List all loaded documents",
+      execute: async () => {
+        return await handleListDocuments(docManager);
+      }
+    },
+    {
+      name: "remove",
+      description: "Remove a document from the knowledge base",
+      execute: async (args) => {
+        if (args.length === 0) {
+          return "Please provide a document name to remove.";
+        }
+        return await handleRemoveDocument(docManager, args[0]);
+      }
+    },
+    {
+      name: "search",
+      description: "Search through loaded documents",
+      execute: async (args) => {
+        if (args.length === 0) {
+          return "Please provide a search query.";
+        }
+        return await handleSearchDocuments(docManager, args.join(" "));
+      }
     }
   ];
 
@@ -280,9 +424,11 @@ const main = async (): Promise<void> => {
         continue;
       }
 
-      const command = commands.find(cmd => cmd.name === userInput.toLowerCase());
-      if (command) {
-        const response = await command.execute(userInput.split(" "));
+      const { command, args } = parseCommand(userInput);
+      const cmd = commands.find(c => c.name === command);
+      
+      if (cmd) {
+        const response = await cmd.execute(args);
         displayMessage(response);
         continue;
       }
@@ -311,7 +457,7 @@ const main = async (): Promise<void> => {
 
       // Normal conversation flow
       conversation = [...conversation, createUserMessage(userInput)];
-      const aiResponse = await getAIResponse(openai, conversation);
+      const aiResponse = await getAIResponse(openai, conversation, docManager);
       displayMessage(aiResponse);
       conversation = [...conversation, createAssistantMessage(aiResponse)];
     }
