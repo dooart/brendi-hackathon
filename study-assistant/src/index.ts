@@ -4,12 +4,13 @@ import readlineSync from "readline-sync";
 import { Message, Conversation } from "./types";
 import { startNoteDetection, Note } from "./notes";
 import { NoteDatabase } from "./database";
+import { ReviewMode } from './review';
 
 // Command types and constants
 type Command = {
   name: string;
   description: string;
-  execute: (conversation: Conversation) => Promise<Conversation>;
+  execute: (args: string[]) => Promise<string>;
 };
 
 const EXIT_COMMANDS = ['exit', 'quit', 'q', 'bye'];
@@ -106,15 +107,12 @@ const getAIResponse = async (
 };
 
 // Command handlers
-const handleExit = async (conversation: Conversation): Promise<Conversation> => {
+const handleExit = async (): Promise<string> => {
   displayGoodbye();
-  return [
-    ...conversation,
-    createAssistantMessage("Goodbye! Happy studying!")
-  ];
+  return "Goodbye! Happy studying!";
 };
 
-const handleHelp = async (conversation: Conversation): Promise<Conversation> => {
+const handleHelp = async (): Promise<string> => {
   const helpMessage = [
     "Available commands:",
     "  help    - Show this help message",
@@ -122,15 +120,16 @@ const handleHelp = async (conversation: Conversation): Promise<Conversation> => 
     "  quit    - Exit the application",
     "  q       - Exit the application",
     "  bye     - Exit the application",
+    "  review  - Start a review session",
+    "  stats   - Show review session statistics",
+    "  notes   - List all notes",
+    "  search  - Search notes by tag",
     "",
     "You can also just type your questions or topics to discuss!"
   ].join('\n');
   
   displayMessage(helpMessage);
-  return [
-    ...conversation,
-    createAssistantMessage(helpMessage)
-  ];
+  return helpMessage;
 };
 
 // Note handling
@@ -148,52 +147,35 @@ const handleNoteCreated = (note: Note, db: NoteDatabase): void => {
 };
 
 // Add note-related commands
-const handleListNotes = async (conversation: Conversation, db: NoteDatabase): Promise<Conversation> => {
+const handleListNotes = async (db: NoteDatabase): Promise<string> => {
   const notes = db.getAllNotes();
   
   if (notes.length === 0) {
-    displayMessage("No notes found.");
-    return [
-      ...conversation,
-      createAssistantMessage("No notes found.")
-    ];
+    return "No notes found.";
   }
 
   const noteList = notes.map(note => 
     `- ${note.title} (${note.tags.join(", ")})`
   ).join("\n");
 
-  displayMessage(`Found ${notes.length} notes:\n${noteList}`);
-  return [
-    ...conversation,
-    createAssistantMessage(`Found ${notes.length} notes:\n${noteList}`)
-  ];
+  return `Found ${notes.length} notes:\n${noteList}`;
 };
 
 const handleSearchNotes = async (
-  conversation: Conversation,
   db: NoteDatabase,
   query: string
-): Promise<Conversation> => {
+): Promise<string> => {
   const notes = db.getNotesByTag(query);
   
   if (notes.length === 0) {
-    displayMessage(`No notes found with tag: ${query}`);
-    return [
-      ...conversation,
-      createAssistantMessage(`No notes found with tag: ${query}`)
-    ];
+    return `No notes found with tag: ${query}`;
   }
 
   const noteList = notes.map(note => 
     `- ${note.title} (${note.tags.join(", ")})`
   ).join("\n");
 
-  displayMessage(`Found ${notes.length} notes with tag "${query}":\n${noteList}`);
-  return [
-    ...conversation,
-    createAssistantMessage(`Found ${notes.length} notes with tag "${query}":\n${noteList}`)
-  ];
+  return `Found ${notes.length} notes with tag "${query}":\n${noteList}`;
 };
 
 // Command handling functions
@@ -206,41 +188,6 @@ const isHelpCommand = (input: string): boolean =>
 const getCommand = (input: string, commands: Command[]): Command | undefined =>
   commands.find(cmd => cmd.name === input.toLowerCase());
 
-// Update the handleConversation function
-const handleConversation = async (
-  openai: OpenAI,
-  conversation: Conversation,
-  commands: Command[]
-): Promise<Conversation> => {
-  const userInput = getUserInput();
-
-  if (isExitCommand(userInput)) {
-    return handleExit(conversation);
-  }
-
-  if (isHelpCommand(userInput)) {
-    return handleHelp(conversation);
-  }
-
-  const command = commands.find(cmd => cmd.name === userInput.toLowerCase());
-  if (command) {
-    return command.execute(conversation);
-  }
-
-  const updatedConversation = [
-    ...conversation,
-    createUserMessage(userInput)
-  ];
-
-  const aiResponse = await getAIResponse(openai, updatedConversation);
-  displayMessage(aiResponse);
-
-  return [
-    ...updatedConversation,
-    createAssistantMessage(aiResponse)
-  ];
-};
-
 // Update the main function
 const main = async (): Promise<void> => {
   config();
@@ -252,27 +199,62 @@ const main = async (): Promise<void> => {
 
   const openai = createOpenAIClient(apiKey);
   const db = new NoteDatabase();
+  const reviewMode = new ReviewMode(db);
+  let isInReviewMode = false;
   let conversation: Conversation = [];
-  const conversationId = `conv_${Date.now()}`;
 
   // Define commands with access to db
   const commands: Command[] = [
     {
-      name: 'help',
-      description: 'Show available commands',
-      execute: handleHelp
+      name: "help",
+      description: "Show available commands",
+      execute: async () => {
+        return commands.map(cmd => `${cmd.name}: ${cmd.description}`).join("\n");
+      }
+    },
+    {
+      name: "exit",
+      description: "Exit the program",
+      execute: async () => {
+        process.exit(0);
+        return "";
+      }
+    },
+    {
+      name: "review",
+      description: "Start a review session",
+      execute: async () => {
+        isInReviewMode = true;
+        const response = await reviewMode.startReview();
+        const question = await reviewMode.getNextQuestion();
+        if (question) {
+          return response + "\n\n" + question;
+        } else {
+          isInReviewMode = false;
+          return response;
+        }
+      }
+    },
+    {
+      name: "stats",
+      description: "Show review session statistics",
+      execute: async () => {
+        return reviewMode.getSessionStats();
+      }
     },
     {
       name: 'notes',
       description: 'List all notes',
-      execute: (conv) => handleListNotes(conv, db)
+      execute: async () => {
+        return await handleListNotes(db);
+      }
     },
     {
       name: 'search',
       description: 'Search notes by tag',
-      execute: (conv) => {
-        const tag = readlineSync.question("Enter tag to search: ");
-        return handleSearchNotes(conv, db, tag);
+      execute: async (args) => {
+        const tag = args[1] || readlineSync.question("Enter tag to search: ");
+        return await handleSearchNotes(db, tag);
       }
     }
   ];
@@ -284,16 +266,54 @@ const main = async (): Promise<void> => {
 
   try {
     while (true) {
-      conversation = await handleConversation(openai, conversation, commands);
-      
-      // Process conversation for notes
-      await noteDetector.process(conversation, conversationId);
+      const userInput = getUserInput();
 
-      if (conversation.length > 0 && 
-          conversation[conversation.length - 1].content === "Goodbye! Happy studying!") {
-        noteDetector.stop();
+      if (isExitCommand(userInput)) {
+        const response = await handleExit();
+        displayMessage(response);
         break;
       }
+
+      if (isHelpCommand(userInput)) {
+        const response = await handleHelp();
+        displayMessage(response);
+        continue;
+      }
+
+      const command = commands.find(cmd => cmd.name === userInput.toLowerCase());
+      if (command) {
+        const response = await command.execute(userInput.split(" "));
+        displayMessage(response);
+        continue;
+      }
+
+      if (isInReviewMode) {
+        const evaluation = await reviewMode.evaluateAnswer(userInput);
+        displayMessage(evaluation.feedback);
+        if (evaluation.followUpQuestion) {
+          displayMessage("Follow-up question: " + evaluation.followUpQuestion);
+        }
+        const hasNext = await reviewMode.moveToNextNote();
+        if (!hasNext) {
+          isInReviewMode = false;
+          displayMessage("Review session completed!");
+        } else {
+          const nextQuestion = await reviewMode.getNextQuestion();
+          if (nextQuestion) {
+            displayMessage(nextQuestion);
+          } else {
+            isInReviewMode = false;
+            displayMessage("No more questions available. Review session completed!");
+          }
+        }
+        continue;
+      }
+
+      // Normal conversation flow
+      conversation = [...conversation, createUserMessage(userInput)];
+      const aiResponse = await getAIResponse(openai, conversation);
+      displayMessage(aiResponse);
+      conversation = [...conversation, createAssistantMessage(aiResponse)];
     }
   } finally {
     // Ensure database is closed
