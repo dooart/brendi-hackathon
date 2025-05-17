@@ -21,31 +21,39 @@ interface NoteDetectionCriteria {
 }
 
 const NOTE_DETECTION_CRITERIA: NoteDetectionCriteria = {
-  minMessageLength: 50,
+  minMessageLength: 30,
   keywords: [
-    "important",
     "key concept",
-    "remember",
-    "note",
-    "definition",
-    "example",
     "principle",
     "theory",
-    "formula",
     "method",
     "process",
-    "technique"
+    "technique",
+    "definition",
+    "explanation",
+    "connection",
+    "relationship",
+    "pattern",
+    "mechanism",
+    "function",
+    "structure",
+    "system"
   ],
   concepts: [
     "explanation",
     "definition",
-    "example",
     "principle",
     "theory",
-    "formula",
     "method",
     "process",
-    "technique"
+    "technique",
+    "connection",
+    "relationship",
+    "pattern",
+    "mechanism",
+    "function",
+    "structure",
+    "system"
   ]
 };
 
@@ -99,17 +107,18 @@ async function generateNote(
       messages: [
         {
           role: "system",
-          content: `You are a note-taking assistant. Create a short, concise, well-structured note from the following message.
-Format the response as JSON with the following structure:
+          content: `You are a Zettelkasten note-taking assistant. Create atomic, concise notes following these principles:
+1. One note = One idea
+2. Keep notes brief and focused (2-3 sentences maximum)
+3. Use your own words, not quotes
+4. Include clear connections to other concepts
+5. Use precise, technical language
+
+Format the response as JSON with this structure:
 {
-  "title": "Concise title capturing the main topic",
-  "content": "Well-structured content with markdown formatting. Include:
-    - Main points
-    - Key definitions
-    - Important examples
-    - Core concepts
-    Use bullet points and headers for better organization",
-  "tags": ["array", "of", "relevant", "tags"]
+  "title": "Short, specific title (3-5 words)",
+  "content": "One clear, atomic idea. Maximum 2-3 sentences. Focus on the core concept.",
+  "tags": ["array", "of", "relevant", "tags", "for", "linking"]
 }`
         },
         {
@@ -118,7 +127,7 @@ Format the response as JSON with the following structure:
         }
       ],
       temperature: 0.7,
-      max_tokens: 500,
+      max_tokens: 300,
       response_format: { type: "json_object" }
     });
 

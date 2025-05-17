@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { NotesPanel } from './components/NotesPanel';
 import './App.css';
 
 interface Message {
@@ -23,8 +24,44 @@ interface Note {
 
 function App() {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [notes, setNotes] = useState<Note[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  const fetchNotes = async () => {
+    try {
+      const response = await fetch('http://localhost:3001/api/notes');
+      if (!response.ok) {
+        throw new Error('Failed to fetch notes');
+      }
+      const data = await response.json();
+      setNotes(data.notes);
+    } catch (error) {
+      console.error('Error fetching notes:', error);
+    }
+  };
+
+  const handleDeleteNote = async (noteId: string) => {
+    try {
+      const response = await fetch(`http://localhost:3001/api/notes/${noteId}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete note');
+      }
+
+      // Remove the note from the local state
+      setNotes(prevNotes => prevNotes.filter(note => note.id !== noteId));
+    } catch (error) {
+      console.error('Error deleting note:', error);
+      // You might want to show an error message to the user here
+    }
+  };
+
+  useEffect(() => {
+    fetchNotes();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,6 +97,8 @@ function App() {
           content: `📝 **New Note Created!**\n\n**${data.note.title}**\n${data.note.content}\n\nTags: ${data.note.tags.join(', ')}`
         };
         setMessages(prev => [...prev, noteMessage]);
+        // Refresh notes after creating a new one
+        fetchNotes();
       }
     } catch (error) {
       console.error('Error:', error);
@@ -85,6 +124,7 @@ The notes will be displayed in the chat with proper formatting and tags. You can
 
   return (
     <div className="app">
+      <NotesPanel notes={notes} onDeleteNote={handleDeleteNote} />
       <div className="chat-container">
         <div className="messages">
           {messages.map((message, index) => (

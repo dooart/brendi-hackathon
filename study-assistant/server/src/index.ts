@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { OpenAI } from 'openai';
 import { DocumentManager } from './documents';
 import { startNoteDetection, Note } from './notes';
+import { NoteDatabase } from './database';
 
 dotenv.config();
 
@@ -18,11 +19,13 @@ const openai = new OpenAI({
 });
 
 const docManager = new DocumentManager();
+const noteDb = new NoteDatabase();
 let lastCreatedNote: Note | null = null;
 
 // Initialize note detection system
 const noteDetection = startNoteDetection(openai, (note: Note) => {
   lastCreatedNote = note;
+  noteDb.saveNote(note);
   console.log('Note created:', note.title);
 });
 
@@ -82,11 +85,22 @@ app.post('/api/chat', async (req, res) => {
 
 app.get('/api/notes', (req, res) => {
   try {
-    // TODO: Implement note retrieval
-    res.json({ notes: [] });
+    const notes = noteDb.getAllNotes();
+    res.json({ notes });
   } catch (error) {
     console.error('Error retrieving notes:', error);
     res.status(500).json({ error: 'Failed to retrieve notes' });
+  }
+});
+
+app.delete('/api/notes/:id', (req, res) => {
+  try {
+    const noteId = req.params.id;
+    noteDb.deleteNote(noteId);
+    res.json({ message: 'Note deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting note:', error);
+    res.status(500).json({ error: 'Failed to delete note' });
   }
 });
 

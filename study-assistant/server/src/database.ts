@@ -187,6 +187,10 @@ export class NoteDatabase {
       }
     }));
   }
+
+  public deleteNote(id: string): void {
+    this.db.prepare('DELETE FROM notes WHERE id = ?').run(id);
+  }
 }
 
 type NoteRow = {
