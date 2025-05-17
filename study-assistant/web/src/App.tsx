@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import './App.css';
 
 interface Message {
@@ -9,6 +10,7 @@ interface Message {
 function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -18,16 +20,20 @@ function App() {
     const userMessage: Message = { role: 'user', content: input };
     setMessages(prev => [...prev, userMessage]);
     setInput('');
+    setIsLoading(true);
 
     try {
-      // TODO: Replace with actual API call
-      const response = await fetch('/api/chat', {
+      const response = await fetch('http://localhost:3001/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ message: input }),
       });
 
-      if (!response.ok) throw new Error('Failed to get response');
+      if (!response.ok) {
+        throw new Error('Failed to get response');
+      }
 
       const data = await response.json();
       const assistantMessage: Message = { role: 'assistant', content: data.response };
@@ -39,6 +45,8 @@ function App() {
         content: 'Sorry, I encountered an error. Please try again.',
       };
       setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -48,19 +56,32 @@ function App() {
         <div className="messages">
           {messages.map((message, index) => (
             <div key={index} className={`message ${message.role}`}>
-              <div className="message-content">{message.content}</div>
+              {message.role === 'assistant' ? (
+                <ReactMarkdown>{message.content}</ReactMarkdown>
+              ) : (
+                message.content
+              )}
             </div>
           ))}
+          {isLoading && (
+            <div className="message assistant typing">
+              <div className="typing-indicator">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+            </div>
+          )}
         </div>
-        <form onSubmit={handleSubmit} className="input-form">
+        <form className="input-form" onSubmit={handleSubmit}>
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Type your message..."
-            className="message-input"
+            disabled={isLoading}
           />
-          <button type="submit" className="send-button">
+          <button type="submit" className="send-button" disabled={isLoading}>
             Send
           </button>
         </form>
