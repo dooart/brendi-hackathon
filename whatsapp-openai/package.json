@@ -7,6 +7,7 @@
         "start": "ts-node api.ts"
     },
     "dependencies": {
+        "@api/pluggy": "file:.api/apis/pluggy",
         "body-parser": "^1.20.2",
         "cors": "^2.8.5",
         "dotenv": "^16.5.0",
