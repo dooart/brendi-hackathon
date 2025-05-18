@@ -17,6 +17,10 @@ export class NoteDatabase {
       CREATE TABLE IF NOT EXISTS documents (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        originalname TEXT NOT NULL,
+        embedding TEXT,
+        text TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -221,6 +225,23 @@ export class NoteDatabase {
 
   public deleteNote(id: string): void {
     this.db.prepare('DELETE FROM notes WHERE id = ?').run(id);
+  }
+
+  saveUploadedDocument({ title, filename, originalname, embedding, text }: { title: string, filename: string, originalname: string, embedding: number[], text: string }): number {
+    const stmt = this.db.prepare(`
+      INSERT INTO documents (title, filename, originalname, embedding, text)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    const result = stmt.run(title, filename, originalname, JSON.stringify(embedding), text);
+    return result.lastInsertRowid as number;
+  }
+
+  getAllUploadedDocuments(): { id: number; title: string; filename: string; originalname: string; created_at: string }[] {
+    return this.db.prepare('SELECT id, title, filename, originalname, created_at FROM documents ORDER BY created_at DESC').all() as { id: number; title: string; filename: string; originalname: string; created_at: string }[];
+  }
+
+  deleteUploadedDocument(id: number): void {
+    this.db.prepare('DELETE FROM documents WHERE id = ?').run(id);
   }
 }
 

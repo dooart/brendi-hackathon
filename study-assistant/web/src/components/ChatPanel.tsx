@@ -4,7 +4,7 @@ import ReactMarkdown from 'react-markdown';
 
 interface ChatPanelProps {
   messages: Message[];
-  onSendMessage: (message: string, model: 'openai' | 'local') => void;
+  onSendMessage: (message: string, model: 'openai' | 'local', useRag: boolean) => void;
   isLoading: boolean;
   messagesEndRef: RefObject<HTMLDivElement>;
   model: 'openai' | 'local';
@@ -18,6 +18,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   model
 }) => {
   const [input, setInput] = useState('');
+  const [useRag, setUseRag] = useState(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -30,7 +31,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (input.trim() && !isLoading) {
-      onSendMessage(input.trim(), model);
+      onSendMessage(input.trim(), model, useRag);
       setInput('');
     }
   };
@@ -60,6 +61,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           </div>
         )}
         <div ref={messagesEndRef} />
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 24px 8px 24px' }}>
+        <input type="checkbox" id="rag-toggle" checked={useRag} onChange={e => setUseRag(e.target.checked)} />
+        <label htmlFor="rag-toggle" style={{ color: '#b0b8c1', fontWeight: 500, fontSize: 15, cursor: 'pointer' }}>Use Document Retrieval (RAG)</label>
       </div>
       <form onSubmit={handleSubmit} className="input-form">
         <input

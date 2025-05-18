@@ -6,6 +6,12 @@ import { DocumentManager } from './documents';
 import { startNoteDetection, Note } from './notes';
 import { NoteDatabase } from './database';
 import fetch from 'node-fetch';
+import multer from 'multer';
+import pdfParse from 'pdf-parse';
+import fs from 'fs';
+import path from 'path';
+import type { Request } from 'express';
+import DocumentDatabase from './documentDatabase';
 
 dotenv.config();
 
@@ -21,7 +27,12 @@ const openai = new OpenAI({
 
 const docManager = new DocumentManager();
 const noteDb = new NoteDatabase();
+const documentDb = new DocumentDatabase();
 let lastCreatedNote: Note | null = null;
+
+const uploadDir = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
+const upload = multer({ dest: uploadDir });
 
 // Initialize note detection system
 const noteDetection = startNoteDetection(openai, (note: Note) => {
@@ -30,38 +41,75 @@ const noteDetection = startNoteDetection(openai, (note: Note) => {
   console.log('Note created:', note.title);
 });
 
+function cosineSimilarity(a: number[], b: number[]): number {
+  let dot = 0, normA = 0, normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
 app.post('/api/chat', async (req, res) => {
   try {
-    const { message, history } = req.body;
+    const { message, history, useRag } = req.body;
     if (!message && !history) {
       return res.status(400).json({ error: 'Message or history is required' });
     }
 
-    let messages;
-    if (history && Array.isArray(history) && history.length > 0) {
-      // If the last message is not the current user message, append it
-      const last = history[history.length - 1];
-      if (!last || last.role !== 'user' || last.content !== message) {
-        messages = [...history, { role: 'user', content: message }];
-      } else {
-        messages = history;
+    let ragContext = '';
+    if (useRag) {
+      // Generate embedding for the query
+      const queryEmbeddingRes = await openai.embeddings.create({
+        model: 'text-embedding-3-small',
+        input: message.slice(0, 8000)
+      });
+      const queryEmbedding = queryEmbeddingRes.data[0].embedding;
+      // Get all docs and their embeddings
+      const docs = documentDb.getAllDocuments();
+      const docRows = docs.map(doc => {
+        const row = documentDb.getEmbeddingAndText(doc.id);
+        if (!row) return null;
+        return { ...doc, embedding: row.embedding, text: row.text };
+      }).filter(Boolean);
+      // Compute similarity
+      const scored = docRows
+        .filter((doc): doc is typeof docRows[0] & { embedding: number[]; text: string } => !!doc && !!doc.embedding && !!doc.text)
+        .map(doc => ({ ...doc, score: cosineSimilarity(queryEmbedding, doc.embedding) }));
+      scored.sort((a, b) => b.score - a.score);
+      const topDocs = scored.slice(0, 2).filter(d => d.score > 0.2);
+      if (topDocs.length > 0) {
+        ragContext = topDocs.map(d => `Document: ${d.title}\n${d.text ? d.text.slice(0, 2000) : ''}`).join('\n---\n');
       }
-    } else {
-      messages = [
-        {
-          role: "system",
-          content: "You are a helpful study assistant. Format your responses using markdown for better readability. Use code blocks, bullet points, and text emphasis where appropriate."
-        },
-        {
-          role: "user",
-          content: message
-        }
+    }
+
+    // Use history if provided, otherwise fallback to old behavior
+    const messages = history && Array.isArray(history) && history.length > 0
+      ? history
+      : [
+          {
+            role: "system",
+            content: "You are a helpful study assistant. Format your responses using markdown for better readability. Use code blocks, bullet points, and text emphasis where appropriate."
+          },
+          {
+            role: "user",
+            content: message
+          }
+        ];
+
+    // Inject RAG context as a system message if present
+    let finalMessages = messages;
+    if (ragContext) {
+      finalMessages = [
+        { role: 'system', content: `You have access to the following documents for context. When using information from these documents, ALWAYS cite the document title and any available metadata in your answer. Make it clear to the user which information comes from which document.\n\n${ragContext}` },
+        ...messages
       ];
     }
 
     const response = await openai.chat.completions.create({
       model: "gpt-4.1-mini",
-      messages,
+      messages: finalMessages,
       temperature: 0.7,
       max_tokens: 500
     });
@@ -186,6 +234,54 @@ app.patch('/api/notes/:id', (req, res) => {
   } catch (error) {
     console.error('Error updating note SRS fields:', error);
     res.status(500).json({ error: 'Failed to update note SRS fields' });
+  }
+});
+
+// Upload PDF, extract text, embed, save
+app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
+  try {
+    const reqWithFile = req as Request & { file?: Express.Multer.File };
+    if (!reqWithFile.file) return res.status(400).json({ error: 'No file uploaded' });
+    const { originalname, path: filePath } = reqWithFile.file;
+    const dataBuffer = fs.readFileSync(filePath);
+    const pdfData = await pdfParse(dataBuffer);
+    const text = pdfData.text;
+    const title = originalname.replace(/\.pdf$/i, '');
+    // Generate embedding with OpenAI
+    const embeddingRes = await openai.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: text.slice(0, 8000) // Truncate for embedding API limits
+    });
+    const embedding = embeddingRes.data[0].embedding;
+    // Save to new documents DB
+    const docId = documentDb.saveDocument({ title, originalname, embedding, text });
+    // Delete the uploaded file after processing
+    fs.unlinkSync(filePath);
+    res.json({ id: docId, title, originalname });
+  } catch (err) {
+    console.error('Upload error:', err);
+    res.status(500).json({ error: 'Failed to process document' });
+  }
+});
+
+// List all documents
+app.get('/api/documents', (req, res) => {
+  try {
+    const docs = documentDb.getAllDocuments();
+    res.json({ documents: docs });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to list documents' });
+  }
+});
+
+// Delete document
+app.delete('/api/documents/:id', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    documentDb.deleteDocument(id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete document' });
   }
 });
 

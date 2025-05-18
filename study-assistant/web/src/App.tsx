@@ -5,6 +5,7 @@ import { ZettelkastenView } from './components/ZettelkastenView';
 import { ReviewPanel } from './components/ReviewPanel';
 import { Message, Note } from './types';
 import './App.css';
+import DocumentsPanel from './components/DocumentsPanel';
 
 function App() {
   const [messages, setMessages] = useState<Message[]>([{
@@ -15,7 +16,7 @@ The notes will be displayed in the chat with proper formatting and tags. You can
   }]);
   const [isLoading, setIsLoading] = useState(false);
   const [notes, setNotes] = useState<Note[]>([]);
-  const [activeTab, setActiveTab] = useState<'chat' | 'notes' | 'zettelkasten' | 'review'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'notes' | 'zettelkasten' | 'review' | 'documents'>('chat');
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
@@ -64,7 +65,7 @@ The notes will be displayed in the chat with proper formatting and tags. You can
     fetchNotes();
   }, []);
 
-  const handleSendMessage = async (message: string, model: 'openai' | 'local') => {
+  const handleSendMessage = async (message: string, model: 'openai' | 'local', useRag: boolean) => {
     if (!message.trim()) return;
     setIsLoading(true);
     try {
@@ -74,7 +75,8 @@ The notes will be displayed in the chat with proper formatting and tags. You can
       
       const requestBody = { 
         message,
-        history: messages.map(m => ({ role: m.role, content: m.content }))
+        history: messages.map(m => ({ role: m.role, content: m.content })),
+        useRag,
       };
       
       const response = await fetch(`http://localhost:3001${endpoint}`, {
@@ -187,6 +189,18 @@ The notes will be displayed in the chat with proper formatting and tags. You can
             </svg>
             Review
           </button>
+          <button
+            className={activeTab === 'documents' ? 'active' : ''}
+            onClick={() => setActiveTab('documents')}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="4" y="2" width="16" height="20" rx="2" />
+              <line x1="9" y1="9" x2="15" y2="9" />
+              <line x1="9" y1="13" x2="15" y2="13" />
+              <line x1="9" y1="17" x2="13" y2="17" />
+            </svg>
+            Documents
+          </button>
         </nav>
       </div>
       <div className="main-content">
@@ -194,7 +208,7 @@ The notes will be displayed in the chat with proper formatting and tags. You can
           <ChatPanel
             messages={messages}
             isLoading={isLoading}
-            onSendMessage={msg => handleSendMessage(msg, model)}
+            onSendMessage={(msg, mdl, useRag) => handleSendMessage(msg, mdl, useRag)}
             messagesEndRef={messagesEndRef}
             model={model}
           />
@@ -218,6 +232,9 @@ The notes will be displayed in the chat with proper formatting and tags. You can
             onNoteClick={handleNoteClick}
             model={model}
           />
+        )}
+        {activeTab === 'documents' && (
+          <DocumentsPanel />
         )}
       </div>
     </div>
