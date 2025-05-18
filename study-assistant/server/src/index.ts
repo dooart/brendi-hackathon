@@ -83,6 +83,26 @@ function batchArray<T>(arr: T[], batchSize: number): T[][] {
   return batches;
 }
 
+// --- RAG Usage Logging ---
+type RAGChunk = { chunk_index: number; chunk_text: string };
+type RAGUsageEntry = {
+  documentId: number;
+  chunkIndexes: RAGChunk[];
+  response: string;
+  timestamp: number;
+};
+const ragUsageLogPath = path.join(process.cwd(), 'rag_usage_log.json');
+function logRagUsage(documentId: number, chunkIndexes: RAGChunk[], response: string, timestamp: number) {
+  let log: RAGUsageEntry[] = [];
+  if (fs.existsSync(ragUsageLogPath)) {
+    try {
+      log = JSON.parse(fs.readFileSync(ragUsageLogPath, 'utf-8'));
+    } catch {}
+  }
+  log.push({ documentId, chunkIndexes, response, timestamp });
+  fs.writeFileSync(ragUsageLogPath, JSON.stringify(log, null, 2));
+}
+
 app.post('/api/chat', async (req, res) => {
   try {
     const { message, history, useRag } = req.body;
@@ -91,6 +111,7 @@ app.post('/api/chat', async (req, res) => {
     }
 
     let ragContext = '';
+    let usedRagChunks: { document_id: number; chunk_index: number; chunk_text: string }[] = [];
     if (useRag) {
       // Generate embedding for the query
       const queryEmbeddingRes = await openai.embeddings.create({
@@ -111,6 +132,12 @@ app.post('/api/chat', async (req, res) => {
           const meta = documentDb.getChunkWithDocMeta(chunk.id);
           return meta ? `Source: ${meta.title} (${meta.originalname})\n${chunk.chunk_text}` : chunk.chunk_text;
         }).join('\n---\n');
+        // Track which document and chunk indexes were used
+        usedRagChunks = topChunks.map(chunk => ({
+          document_id: chunk.document_id,
+          chunk_index: chunk.chunk_index,
+          chunk_text: chunk.chunk_text
+        }));
       }
     } else {
       console.log('[RAG] RAG is disabled for this request');
@@ -149,6 +176,19 @@ app.post('/api/chat', async (req, res) => {
     const aiResponse = response.choices[0].message.content;
     if (!aiResponse) {
       throw new Error('No response from OpenAI');
+    }
+
+    // Log RAG usage if any
+    if (usedRagChunks.length > 0) {
+      // Group by document_id
+      const byDoc: { [docId: number]: RAGChunk[] } = {};
+      usedRagChunks.forEach(c => {
+        if (!byDoc[c.document_id]) byDoc[c.document_id] = [];
+        byDoc[c.document_id].push({ chunk_index: c.chunk_index, chunk_text: c.chunk_text });
+      });
+      Object.entries(byDoc).forEach(([docId, chunks]) => {
+        logRagUsage(Number(docId), chunks, aiResponse, Date.now());
+      });
     }
 
     // Process the response for note detection
@@ -343,6 +383,19 @@ app.delete('/api/documents/:id', (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete document' });
+  }
+});
+
+// --- New endpoint: Get all responses where a document's chunks were used ---
+app.get('/api/documents/:id/usage', (req, res) => {
+  const docId = Number(req.params.id);
+  if (!fs.existsSync(ragUsageLogPath)) return res.json([]);
+  try {
+    const log: RAGUsageEntry[] = JSON.parse(fs.readFileSync(ragUsageLogPath, 'utf-8'));
+    const filtered = log.filter((entry: RAGUsageEntry) => entry.documentId === docId);
+    res.json(filtered);
+  } catch {
+    res.status(500).json({ error: 'Failed to read usage log' });
   }
 });
 
