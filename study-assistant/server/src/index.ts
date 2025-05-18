@@ -12,14 +12,28 @@ import fs from 'fs';
 import path from 'path';
 import type { Request } from 'express';
 import DocumentDatabase from './documentDatabase';
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js';
 
 dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3001;
 
-app.use(cors());
+app.use(cors({
+  origin: [
+    'http://localhost:3002',
+    'http://127.0.0.1:3002',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173'
+  ],
+  methods: ['GET', 'POST', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
 app.use(express.json());
+
+// Explicitly handle OPTIONS for upload endpoint
+app.options('/api/documents/upload', cors());
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
@@ -42,7 +56,17 @@ const noteDetection = startNoteDetection(openai, (note: Note) => {
 });
 
 // In-memory upload status map for progress feedback
-const uploadStatus: Record<string, { status: string; progress: number; error?: string }> = {};
+type UploadStatus = {
+  status: string;
+  progress: number;
+  error?: string;
+  chunk?: number;
+  totalChunks?: number;
+  subChunk?: number;
+  totalSubChunks?: number;
+  splitChunks?: number;
+};
+const uploadStatus: Record<string, UploadStatus> = {};
 
 // Helper to generate a unique upload ID
 function generateUploadId() {
@@ -59,7 +83,7 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-function chunkText(text: string, chunkSize = 800): string[] {
+function chunkText(text: string, chunkSize = 1500): string[] {
   const chunks = [];
   let i = 0;
   while (i < text.length) {
@@ -69,7 +93,7 @@ function chunkText(text: string, chunkSize = 800): string[] {
     if (nextBreak <= i) nextBreak = text.indexOf('\n', end);
     if (nextBreak > i && nextBreak - i < chunkSize * 1.5) end = nextBreak;
     chunks.push(text.slice(i, end).trim());
-    i = end;
+    i = end - 200; // Add 200 character overlap between chunks
   }
   return chunks.filter(Boolean);
 }
@@ -97,36 +121,89 @@ function logRagUsage(documentId: number, chunkIndexes: RAGChunk[], response: str
   if (fs.existsSync(ragUsageLogPath)) {
     try {
       log = JSON.parse(fs.readFileSync(ragUsageLogPath, 'utf-8'));
-    } catch {}
+    } catch (err) {
+    }
   }
-  log.push({ documentId, chunkIndexes, response, timestamp });
-  fs.writeFileSync(ragUsageLogPath, JSON.stringify(log, null, 2));
+  
+  const newEntry = { documentId, chunkIndexes, response, timestamp };
+  log.push(newEntry);
+  
+  try {
+    fs.writeFileSync(ragUsageLogPath, JSON.stringify(log, null, 2));
+  } catch (err) {
+  }
+}
+
+// Helper to get embedding from Ollama
+async function getOllamaEmbedding(text: string): Promise<number[]> {
+  const res = await fetch('http://localhost:11434/api/embeddings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: 'zylonai/multilingual-e5-large', prompt: text })
+  });
+  if (!res.ok) {
+    const errorText = await res.text();
+    console.error('Ollama embedding error:', errorText);
+    throw new Error('Ollama embedding failed');
+  }
+  const data = await res.json();
+  if (!data.embedding) throw new Error('No embedding in Ollama response');
+  return data.embedding;
+}
+// Helper to get embedding from OpenAI
+async function getOpenAIEmbedding(text: string): Promise<number[]> {
+  const embeddingRes = await openai.embeddings.create({
+    model: 'text-embedding-3-small',
+    input: text.slice(0, 8000)
+  });
+  return embeddingRes.data[0].embedding;
+}
+// Helper to get embedding based on provider
+async function getEmbedding(text: string, provider: 'openai' | 'ollama' = 'openai'): Promise<number[]> {
+  if (provider === 'ollama') return getOllamaEmbedding(text);
+  return getOpenAIEmbedding(text);
+}
+
+// Helper: average multiple embeddings
+function averageEmbeddings(embeddings: number[][]): number[] {
+  if (embeddings.length === 0) throw new Error('No embeddings to average');
+  const length = embeddings[0].length;
+  const sum = new Array(length).fill(0);
+  for (const emb of embeddings) {
+    for (let i = 0; i < length; i++) {
+      sum[i] += emb[i];
+    }
+  }
+  return sum.map(x => x / embeddings.length);
 }
 
 app.post('/api/chat', async (req, res) => {
   try {
-    const { message, history, useRag } = req.body;
+    const { message, history, useRag, embeddingProvider } = req.body;
     if (!message && !history) {
       return res.status(400).json({ error: 'Message or history is required' });
     }
+    const provider = embeddingProvider === 'ollama' ? 'ollama' : 'openai';
 
     let ragContext = '';
     let usedRagChunks: { document_id: number; chunk_index: number; chunk_text: string }[] = [];
     if (useRag) {
       // Generate embedding for the query
-      const queryEmbeddingRes = await openai.embeddings.create({
-        model: 'text-embedding-3-small',
-        input: message.slice(0, 8000)
-      });
-      const queryEmbedding = queryEmbeddingRes.data[0].embedding;
+      const queryEmbedding = await getEmbedding(message.slice(0, 8000), provider);
       // Get all chunks and their embeddings
       const chunks = documentDb.getAllChunks();
+      console.log(`[RAG] Found ${chunks.length} total chunks in database`);
+      
       const scored = chunks.map(chunk => ({
         ...chunk,
         score: cosineSimilarity(queryEmbedding, chunk.embedding)
       }));
       scored.sort((a, b) => b.score - a.score);
-      const topChunks = scored.slice(0, 3).filter(d => d.score > 0.2);
+      
+      // Lower the similarity threshold to 0.1 and take top 5 chunks
+      const topChunks = scored.slice(0, 5).filter(d => d.score > 0.1);
+      console.log(`[RAG] Found ${topChunks.length} relevant chunks with scores:`, topChunks.map(c => c.score));
+      
       if (topChunks.length > 0) {
         ragContext = topChunks.map(chunk => {
           const meta = documentDb.getChunkWithDocMeta(chunk.id);
@@ -138,6 +215,9 @@ app.post('/api/chat', async (req, res) => {
           chunk_index: chunk.chunk_index,
           chunk_text: chunk.chunk_text
         }));
+        console.log(`[RAG] Using chunks from documents:`, [...new Set(usedRagChunks.map(c => c.document_id))]);
+      } else {
+        console.log('[RAG] No relevant chunks found above similarity threshold');
       }
     } else {
       console.log('[RAG] RAG is disabled for this request');
@@ -315,6 +395,7 @@ app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
   uploadStatus[uploadId] = { status: 'Uploading file...', progress: 0 };
   try {
     const reqWithFile = req as Request & { file?: Express.Multer.File };
+    const embeddingProvider = req.body.embeddingProvider === 'ollama' ? 'ollama' : 'openai';
     if (!reqWithFile.file) {
       uploadStatus[uploadId] = { status: 'No file uploaded', progress: 0, error: 'No file uploaded' };
       return res.status(400).json({ error: 'No file uploaded', uploadId });
@@ -322,33 +403,102 @@ app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
     uploadStatus[uploadId] = { status: 'Extracting text...', progress: 10 };
     const { originalname, path: filePath } = reqWithFile.file;
     const dataBuffer = fs.readFileSync(filePath);
-    const pdfData = await pdfParse(dataBuffer);
-    const text = pdfData.text;
     const title = originalname.replace(/\.pdf$/i, '');
-    uploadStatus[uploadId] = { status: 'Creating document embedding...', progress: 20 };
-    const embeddingRes = await openai.embeddings.create({
-      model: 'text-embedding-3-small',
-      input: text.slice(0, 8000)
-    });
-    const embedding = embeddingRes.data[0].embedding;
-    uploadStatus[uploadId] = { status: 'Splitting into chunks...', progress: 30 };
-    const chunks = chunkText(text, 800);
-    const BATCH_SIZE = 100;
-    const chunkBatches = batchArray(chunks, BATCH_SIZE);
-    let allEmbeddings: number[][] = [];
-    let batchNum = 0;
-    for (const batch of chunkBatches) {
-      uploadStatus[uploadId] = { status: `Creating chunk embeddings (batch ${batchNum + 1} of ${chunkBatches.length})...`, progress: 30 + Math.floor(60 * (batchNum / chunkBatches.length)) };
-      const batchRes = await openai.embeddings.create({
-        model: 'text-embedding-3-small',
-        input: batch
-      });
-      allEmbeddings = allEmbeddings.concat(batchRes.data.map(d => d.embedding));
-      batchNum++;
+    // Use pdfjsLib to stream pages
+    const loadingTask = pdfjsLib.getDocument({ data: dataBuffer });
+    const pdf = await loadingTask.promise;
+    const numPages = pdf.numPages;
+    let docTextForEmbedding = '';
+    let chunkIndex = 0;
+    const MAX_EMBEDDING_CHARS = 1024;
+    const CHUNK_SIZE = 1500;
+    const CHUNK_OVERLAP = 200;
+    // Save document first, get docId
+    const docId = documentDb.saveDocument({ title, originalname, embedding: [], text: '' });
+    let totalChunks = 0;
+    // First pass: count total chunks for progress
+    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const content = await page.getTextContent();
+      const pageText = (content.items as { str?: string }[]).map((item) => (item.str || '')).join(' ');
+      for (let i = 0; i < pageText.length; i += CHUNK_SIZE - CHUNK_OVERLAP) {
+        totalChunks++;
+      }
     }
-    uploadStatus[uploadId] = { status: 'Saving to database...', progress: 95 };
-    const chunkRecords = chunks.map((chunk, idx) => ({ chunk_index: idx, chunk_text: chunk, embedding: allEmbeddings[idx] }));
-    const docId = documentDb.saveDocumentWithChunks({ title, originalname, embedding, text, chunks: chunkRecords });
+    // Second pass: process and embed (BATCHED + PARALLEL)
+    // Collect all chunk info first
+    const allChunks: { chunk_index: number; chunk_text: string }[] = [];
+    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const content = await page.getTextContent();
+      const pageText = (content.items as { str?: string }[]).map((item) => (item.str || '')).join(' ');
+      for (let i = 0; i < pageText.length; i += CHUNK_SIZE - CHUNK_OVERLAP) {
+        allChunks.push({ chunk_index: allChunks.length, chunk_text: pageText.slice(i, i + CHUNK_SIZE) });
+      }
+    }
+    // Batching
+    const providerBatchSize = embeddingProvider === 'openai' ? 16 : 4;
+    const batches = batchArray(allChunks, providerBatchSize);
+    const concurrencyLimit = 3;
+    let processedChunks = 0;
+    // Helper for concurrency
+    async function processBatch(batch: { chunk_index: number; chunk_text: string }[]) {
+      let embeddings: number[][] = [];
+      if (embeddingProvider === 'openai') {
+        // Batch request for OpenAI
+        const texts = batch.map(c => c.chunk_text.slice(0, MAX_EMBEDDING_CHARS));
+        const embeddingRes = await openai.embeddings.create({
+          model: 'text-embedding-3-small',
+          input: texts
+        });
+        embeddings = embeddingRes.data.map(d => d.embedding);
+      } else {
+        // Ollama: parallel requests for each chunk in the batch
+        embeddings = await Promise.all(batch.map(c => getOllamaEmbedding(c.chunk_text.slice(0, MAX_EMBEDDING_CHARS))));
+      }
+      // Save each chunk immediately
+      for (let i = 0; i < batch.length; i++) {
+        documentDb.saveChunks(docId, [{ chunk_index: batch[i].chunk_index, chunk_text: batch[i].chunk_text, embedding: embeddings[i] }]);
+        processedChunks++;
+      }
+      // Update status after each batch
+      uploadStatus[uploadId] = {
+        status: `Embedded ${processedChunks} of ${allChunks.length} chunks...`,
+        progress: 10 + Math.floor(80 * (processedChunks / allChunks.length)),
+        chunk: processedChunks,
+        totalChunks: allChunks.length
+      };
+      // Log every 50
+      if (processedChunks % 50 === 0) {
+        console.log(`[Upload] Processed ${processedChunks} of ${allChunks.length} chunks...`);
+      }
+    }
+    // Concurrency control (simple pool)
+    async function runBatches() {
+      let idx = 0;
+      const pool: Promise<void>[] = [];
+      while (idx < batches.length) {
+        while (pool.length < concurrencyLimit && idx < batches.length) {
+          const p = processBatch(batches[idx]);
+          pool.push(p);
+          idx++;
+        }
+        await Promise.race(pool);
+        // Remove the first resolved promise from the pool
+        pool.shift();
+      }
+      await Promise.all(pool);
+    }
+    await runBatches();
+    // Now update the document-level embedding and text
+    let docEmbeddingText = docTextForEmbedding;
+    if (docEmbeddingText.length > MAX_EMBEDDING_CHARS) {
+      console.warn('[Embedding] Document text truncated for embedding.');
+      docEmbeddingText = docEmbeddingText.slice(0, MAX_EMBEDDING_CHARS);
+    }
+    const embedding = await getEmbedding(docEmbeddingText, embeddingProvider);
+    // Use a public method to update document embedding and text
+    documentDb.updateDocumentEmbeddingAndText(docId, embedding, docTextForEmbedding);
     fs.unlinkSync(filePath);
     uploadStatus[uploadId] = { status: 'Upload complete!', progress: 100 };
     res.json({ id: docId, title, originalname, uploadId });
@@ -389,12 +539,18 @@ app.delete('/api/documents/:id', (req, res) => {
 // --- New endpoint: Get all responses where a document's chunks were used ---
 app.get('/api/documents/:id/usage', (req, res) => {
   const docId = Number(req.params.id);
-  if (!fs.existsSync(ragUsageLogPath)) return res.json([]);
+  
+  if (!fs.existsSync(ragUsageLogPath)) {
+    return res.json([]);
+  }
+  
   try {
     const log: RAGUsageEntry[] = JSON.parse(fs.readFileSync(ragUsageLogPath, 'utf-8'));
+    
     const filtered = log.filter((entry: RAGUsageEntry) => entry.documentId === docId);
+    
     res.json(filtered);
-  } catch {
+  } catch (err) {
     res.status(500).json({ error: 'Failed to read usage log' });
   }
 });

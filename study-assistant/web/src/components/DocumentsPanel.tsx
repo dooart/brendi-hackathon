@@ -19,7 +19,7 @@ interface RAGUsageEntry {
   timestamp: number;
 }
 
-const DocumentsPanel: React.FC = () => {
+const DocumentsPanel: React.FC<{ embeddingProvider: 'openai' | 'ollama' }> = ({ embeddingProvider }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
@@ -35,6 +35,20 @@ const DocumentsPanel: React.FC = () => {
   const [modalUsage, setModalUsage] = useState<RAGUsageEntry[] | null>(null);
   const [modalLoading, setModalLoading] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
+  const modalRefreshInterval = useRef<NodeJS.Timeout | null>(null);
+
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [uploadStatusMsg, setUploadStatusMsg] = useState<string>('');
+  const [currentUploadId, setCurrentUploadId] = useState<string | null>(null);
+  const uploadStatusInterval = useRef<NodeJS.Timeout | null>(null);
+
+  const [detailedProgress, setDetailedProgress] = useState<{
+    chunk?: number;
+    totalChunks?: number;
+    subChunk?: number;
+    totalSubChunks?: number;
+    splitChunks?: number;
+  }>();
 
   const fetchDocuments = async () => {
     setIsLoadingDocs(true);
@@ -54,19 +68,58 @@ const DocumentsPanel: React.FC = () => {
     fetchDocuments();
   }, []);
 
+  // Poll upload status
+  useEffect(() => {
+    if (!currentUploadId) return;
+    const poll = async () => {
+      try {
+        const res = await fetch(`http://localhost:3001/api/documents/upload-status/${currentUploadId}`);
+        const data = await res.json();
+        setUploadProgress(data.progress || 0);
+        setUploadStatusMsg(data.status || '');
+        setDetailedProgress({
+          chunk: data.chunk,
+          totalChunks: data.totalChunks,
+          subChunk: data.subChunk,
+          totalSubChunks: data.totalSubChunks,
+          splitChunks: data.splitChunks
+        });
+        if (data.progress >= 100 || data.error) {
+          setTimeout(() => {
+            setCurrentUploadId(null);
+            setUploadProgress(0);
+            setUploadStatusMsg('');
+            setDetailedProgress(undefined);
+          }, 2000);
+        }
+      } catch {
+        setUploadStatusMsg('Failed to get upload status');
+      }
+    };
+    uploadStatusInterval.current = setInterval(poll, 500);
+    return () => {
+      if (uploadStatusInterval.current) clearInterval(uploadStatusInterval.current);
+    };
+  }, [currentUploadId]);
+
   const handleUpload = async () => {
     if (!selectedFile) return;
     setIsUploading(true);
     setUploadSuccess(null);
     setUploadError(null);
+    setUploadProgress(0);
+    setUploadStatusMsg('Starting upload...');
     try {
       const formData = new FormData();
       formData.append('file', selectedFile);
+      formData.append('embeddingProvider', embeddingProvider);
       const res = await fetch('http://localhost:3001/api/documents/upload', {
         method: 'POST',
         body: formData,
       });
+      const data = await res.json();
       if (!res.ok) throw new Error('Upload failed');
+      setCurrentUploadId(data.uploadId);
       setUploadSuccess('Upload successful!');
       setSelectedFile(null);
       fetchDocuments();
@@ -107,28 +160,59 @@ const DocumentsPanel: React.FC = () => {
   };
 
   // Modal logic
-  const openModal = async (doc: DocumentMeta) => {
-    setModalDoc(doc);
-    setModalUsage(null);
-    setModalError(null);
-    setModalLoading(true);
+  const fetchModalUsage = async (docId: number) => {
+    console.log(`[DocumentsPanel] Fetching usage for document ${docId}`);
     try {
-      const res = await fetch(`http://localhost:3001/api/documents/${doc.id}/usage`);
+      const res = await fetch(`http://localhost:3001/api/documents/${docId}/usage`);
       if (!res.ok) throw new Error('Failed to fetch usage');
       const data = await res.json();
+      console.log(`[DocumentsPanel] Received usage data:`, data);
       setModalUsage(data);
     } catch (err) {
+      console.error(`[DocumentsPanel] Error fetching usage:`, err);
       setModalError('Failed to load usage data.');
     } finally {
       setModalLoading(false);
     }
   };
+
+  const openModal = async (doc: DocumentMeta) => {
+    console.log(`[DocumentsPanel] Opening modal for document:`, doc);
+    setModalDoc(doc);
+    setModalUsage(null);
+    setModalError(null);
+    setModalLoading(true);
+    await fetchModalUsage(doc.id);
+
+    // Set up refresh interval
+    modalRefreshInterval.current = setInterval(() => {
+      if (modalDoc) {
+        console.log(`[DocumentsPanel] Refreshing usage data for document ${modalDoc.id}`);
+        fetchModalUsage(modalDoc.id);
+      }
+    }, 5000); // Refresh every 5 seconds
+  };
+
   const closeModal = () => {
     setModalDoc(null);
     setModalUsage(null);
     setModalError(null);
     setModalLoading(false);
+    // Clear refresh interval
+    if (modalRefreshInterval.current) {
+      clearInterval(modalRefreshInterval.current);
+      modalRefreshInterval.current = null;
+    }
   };
+
+  // Clean up interval on unmount
+  useEffect(() => {
+    return () => {
+      if (modalRefreshInterval.current) {
+        clearInterval(modalRefreshInterval.current);
+      }
+    };
+  }, []);
 
   // Close modal on outside click
   useEffect(() => {
@@ -147,11 +231,46 @@ const DocumentsPanel: React.FC = () => {
     <div className="documents-container">
       <h2 className="documents-title">📚 Document Library</h2>
       <div className="documents-upload-section">
+        {/* Progress bar and status */}
+        {(isUploading || currentUploadId) && (
+          <div style={{ width: '100%', marginBottom: 18 }}>
+            <div style={{ height: 12, background: '#23272f', borderRadius: 8, overflow: 'hidden', marginBottom: 6 }}>
+              <div
+                style={{
+                  width: `${uploadProgress}%`,
+                  height: '100%',
+                  background: uploadProgress >= 100 ? 'linear-gradient(90deg, #00c853 0%, #b2ff59 100%)' : 'linear-gradient(90deg, #4a9eff 0%, #7f53ff 100%)',
+                  transition: 'width 0.3s'
+                }}
+              />
+            </div>
+            <div style={{ color: uploadProgress >= 100 ? '#00c853' : '#7f53ff', fontSize: 15, minHeight: 18, fontWeight: 500 }}>
+              {uploadStatusMsg}
+              {uploadProgress >= 100 && ' (Complete!)'}
+            </div>
+            {detailedProgress && (
+              <div style={{ color: '#b0b8c1', fontSize: 14, marginTop: 2 }}>
+                {typeof detailedProgress.chunk === 'number' && typeof detailedProgress.totalChunks === 'number' && detailedProgress.totalChunks > 0 && (
+                  <span>
+                    <b>Embedding chunk {detailedProgress.chunk}/{detailedProgress.totalChunks}</b>
+                  </span>
+                )}
+                {typeof detailedProgress.subChunk === 'number' && detailedProgress.totalSubChunks && detailedProgress.totalSubChunks > 1 && (
+                  <span> (sub-chunk {detailedProgress.subChunk}/{detailedProgress.totalSubChunks})</span>
+                )}
+                {typeof detailedProgress.splitChunks === 'number' && detailedProgress.splitChunks > 0 && (
+                  <span> | <b>{detailedProgress.splitChunks} chunk(s) required splitting/truncation</b></span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         <div
           className={`upload-area${selectedFile ? ' has-file' : ''}`}
-          onClick={() => fileInputRef.current?.click()}
+          onClick={() => !isUploading && !currentUploadId && fileInputRef.current?.click()}
           onDrop={handleDrop}
           onDragOver={handleDragOver}
+          style={{ opacity: isUploading || currentUploadId ? 0.6 : 1, pointerEvents: isUploading || currentUploadId ? 'none' : 'auto' }}
         >
           <input
             type="file"
@@ -159,7 +278,7 @@ const DocumentsPanel: React.FC = () => {
             ref={fileInputRef}
             className="upload-input"
             onChange={e => setSelectedFile(e.target.files?.[0] || null)}
-            disabled={isUploading}
+            disabled={isUploading || !!currentUploadId}
           />
           <div className="upload-icon">📤</div>
           <div className="upload-text">
@@ -176,9 +295,9 @@ const DocumentsPanel: React.FC = () => {
         <button
           className="upload-btn"
           onClick={handleUpload}
-          disabled={!selectedFile || isUploading}
+          disabled={!selectedFile || isUploading || !!currentUploadId}
         >
-          {isUploading ? 'Uploading...' : 'Upload Document'}
+          {isUploading || currentUploadId ? 'Uploading...' : 'Upload Document'}
         </button>
         {uploadSuccess && <div className="upload-success">{uploadSuccess}</div>}
         {uploadError && <div className="upload-error">{uploadError}</div>}

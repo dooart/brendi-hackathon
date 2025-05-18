@@ -21,6 +21,7 @@ The notes will be displayed in the chat with proper formatting and tags. You can
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [model, setModel] = useState<'openai' | 'local'>('openai');
+  const [embeddingProvider, setEmbeddingProvider] = useState<'openai' | 'ollama'>('openai');
 
   const fetchNotes = async () => {
     try {
@@ -122,27 +123,24 @@ The notes will be displayed in the chat with proper formatting and tags. You can
     <div className="app">
       <div className="sidebar">
         <div className="logo">Study Assistant</div>
-        <div style={{ margin: '18px 0 24px 0', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6 }}>
-          <label htmlFor="model-select" style={{ fontWeight: 500, fontSize: 14, color: '#b0b8c1', marginBottom: 2 }}>Model</label>
+        <div style={{ margin: '18px 0 18px 0', padding: '0 12px' }}>
+          <div style={{ color: '#b0b8c1', fontWeight: 600, fontSize: 14, marginBottom: 6 }}>Model</div>
           <select
-            id="model-select"
             value={model}
             onChange={e => setModel(e.target.value as 'openai' | 'local')}
-            style={{
-              padding: '7px 14px',
-              borderRadius: 8,
-              background: '#23272f',
-              color: '#e6e6e6',
-              border: '1px solid #4a9eff33',
-              fontSize: 15,
-              fontWeight: 500,
-              outline: 'none',
-              width: '100%',
-              marginTop: 0
-            }}
+            style={{ width: '100%', padding: 8, borderRadius: 8, background: '#23272f', color: '#e6e6e6', border: '1px solid #4a9eff33', fontSize: 15, marginBottom: 10 }}
           >
             <option value="openai">OpenAI (gpt4.1-mini)</option>
-            <option value="local">Local (Ollama)</option>
+            <option value="local">Ollama (phi3:latest)</option>
+          </select>
+          <div style={{ color: '#b0b8c1', fontWeight: 600, fontSize: 14, marginBottom: 6, marginTop: 14 }}>Embedding Provider</div>
+          <select
+            value={embeddingProvider}
+            onChange={e => setEmbeddingProvider(e.target.value as 'openai' | 'ollama')}
+            style={{ width: '100%', padding: 8, borderRadius: 8, background: '#23272f', color: '#e6e6e6', border: '1px solid #4a9eff33', fontSize: 15 }}
+          >
+            <option value="openai">OpenAI</option>
+            <option value="ollama">Ollama (e5-base-v2)</option>
           </select>
         </div>
         <nav>
@@ -211,6 +209,7 @@ The notes will be displayed in the chat with proper formatting and tags. You can
             onSendMessage={(msg, mdl, useRag) => handleSendMessage(msg, mdl, useRag)}
             messagesEndRef={messagesEndRef}
             model={model}
+            embeddingProvider={embeddingProvider}
           />
         )}
         {activeTab === 'notes' && (
@@ -234,7 +233,7 @@ The notes will be displayed in the chat with proper formatting and tags. You can
           />
         )}
         {activeTab === 'documents' && (
-          <DocumentsPanel />
+          <DocumentsPanel embeddingProvider={embeddingProvider} />
         )}
       </div>
     </div>

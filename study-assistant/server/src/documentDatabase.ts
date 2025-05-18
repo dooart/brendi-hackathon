@@ -72,13 +72,13 @@ export class DocumentDatabase {
     return rows.map((row: any) => ({ ...row, embedding: JSON.parse(row.embedding) }));
   }
 
-  getChunkWithDocMeta(chunkId: number): { chunk_text: string; document_id: number; title: string; originalname: string } | null {
+  getChunkWithDocMeta(chunkId: number): { title: string; originalname: string } | null {
     const row = this.db.prepare(`
-      SELECT c.chunk_text, c.document_id, d.title, d.originalname
-      FROM document_chunks c
-      JOIN documents d ON c.document_id = d.id
+      SELECT d.title, d.originalname
+      FROM documents d
+      JOIN document_chunks c ON c.document_id = d.id
       WHERE c.id = ?
-    `).get(chunkId) as { chunk_text: string; document_id: number; title: string; originalname: string } | undefined;
+    `).get(chunkId) as { title: string; originalname: string } | undefined;
     return row || null;
   }
 
@@ -99,6 +99,10 @@ export class DocumentDatabase {
       return docId;
     })();
     return result;
+  }
+
+  updateDocumentEmbeddingAndText(id: number, embedding: number[], text: string): void {
+    this.db.prepare('UPDATE documents SET embedding = ?, text = ? WHERE id = ?').run(JSON.stringify(embedding), text, id);
   }
 }
 
