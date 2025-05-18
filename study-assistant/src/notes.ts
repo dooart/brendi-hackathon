@@ -179,7 +179,7 @@ const generateNote = async (
       id: `note_${Date.now()}`,
       title: parsedNote.title,
       content: parsedNote.content,
-      tags: parsedNote.tags,
+      tags: parsedNote.tags.map((tag: string) => tag.replace(/\s+/g, '-')),
       relatedNotes: [],
       createdAt: now,
       lastModified: now,
