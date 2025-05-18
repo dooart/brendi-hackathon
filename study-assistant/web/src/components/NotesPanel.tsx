@@ -51,3 +51,4 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ notes, onNoteClick, onDe
 };
 
 export default NotesPanel; 
+ 

@@ -26,11 +26,14 @@ body, .app {
 }
 
 .notes-panel {
-  width: 300px;
-  background-color: white;
-  border-right: 1px solid #e0e0e0;
-  padding: 20px;
+  width: 100%;
+  background-color: #20232a;
+  border-right: none;
+  padding: 32px 24px;
   overflow-y: auto;
+  min-height: 100vh;
+  max-width: 700px;
+  margin: 0 auto;
 }
 
 .notes-panel h2 {
@@ -40,17 +43,18 @@ body, .app {
 }
 
 .notes-list {
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 18px;
 }
 
 .note-card {
-  background: #2a2a2a;
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 16px;
-  transition: all 0.2s ease;
+  background: #23272f;
+  border-radius: 16px;
+  padding: 24px 20px 18px 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+  transition: box-shadow 0.2s, border 0.2s;
+  border: 2px solid transparent;
 }
 
 .note-card.selected {
@@ -65,16 +69,17 @@ body, .app {
 }
 
 .note-content {
-  font-size: 0.9rem;
-  color: #4a5568;
-  margin-bottom: 10px;
+  font-size: 1rem;
+  color: #b0b8c1;
+  margin-bottom: 24px;
 }
 
 .note-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 8px;
   margin-bottom: 10px;
+  margin-top: 8px;
 }
 
 .tag {
@@ -107,9 +112,11 @@ body, .app {
 
 .message {
   max-width: 80%;
-  padding: 12px 16px;
-  border-radius: 12px;
-  line-height: 1.5;
+  padding: 22px 28px;
+  border-radius: 16px;
+  line-height: 1.6;
+  font-size: 1rem;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
 }
 
 .message.user {
@@ -235,21 +242,26 @@ input:disabled {
 .delete-button {
   background: none;
   border: none;
-  color: #e53e3e;
-  font-size: 1.5rem;
-  line-height: 1;
-  padding: 4px 8px;
+  color: #b0b8c1;
+  font-size: 1.2rem;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
   cursor: pointer;
-  border-radius: 4px;
-  transition: background-color 0.2s;
+  transition: background 0.2s, color 0.2s;
+  margin-left: 8px;
 }
 
 .delete-button:hover {
-  background-color: #fed7d7;
+  background: #ff5c5c22;
+  color: #ff5c5c;
 }
 
 .delete-button:disabled {
-  color: #cbd5e0;
+  color: #b0b8c1;
   cursor: not-allowed;
   background: none;
 }
@@ -394,33 +406,35 @@ canvas {
 }
 
 .sidebar {
-  width: 280px;
-  min-width: 280px;
+  width: 160px;
+  min-width: 160px;
+  max-width: 160px;
   background: #23272f;
-  border-right: 1px solid #23272f;
+  border-right: 1px solid #2a2e38;
   display: flex;
   flex-direction: column;
-  padding: 24px 0;
+  padding: 20px 0;
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
 }
 
 .logo {
-  padding: 0 24px 24px 24px;
-  font-size: 1.5rem;
+  padding: 0 6px 6px 6px;
+  font-size: 0.85rem;
   font-weight: 700;
   color: #4a9eff;
-  margin-bottom: 16px;
-  border-bottom: 1px solid #23272f;
+  margin-bottom: 4px;
+  border-bottom: 1px solid #2a2e38;
 }
 
 .sidebar nav {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 0 16px;
+  gap: 2px;
+  padding: 0 2px;
 }
 
 .sidebar nav button {
-  padding: 14px 20px;
+  padding: 14px 16px;
   border: none;
   border-radius: 12px;
   background: transparent;
@@ -433,6 +447,11 @@ canvas {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.sidebar nav button svg {
+  width: 20px;
+  height: 20px;
 }
 
 .sidebar nav button:hover {
@@ -450,7 +469,7 @@ canvas {
   flex: 1;
   background: #20232a;
   overflow-y: auto;
-  box-shadow: -2px 0 8px rgba(0,0,0,0.08);
+  border-left: 1px solid #2a2e38;
 }
 
 /* Modern dark background and font */
@@ -703,8 +722,8 @@ canvas {
 
 .note-card {
   background: #23272f;
-  border-radius: 12px;
-  padding: 20px 18px 16px 18px;
+  border-radius: 16px;
+  padding: 24px 20px 18px 20px;
   margin-bottom: 0;
   box-shadow: 0 2px 8px rgba(0,0,0,0.10);
   transition: box-shadow 0.2s, border 0.2s;
@@ -757,7 +776,7 @@ canvas {
 .note-content {
   font-size: 1rem;
   color: #b0b8c1;
-  margin-bottom: 10px;
+  margin-bottom: 18px;
 }
 
 .note-tags {
@@ -765,6 +784,7 @@ canvas {
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 10px;
+  margin-top: 8px;
 }
 
 .tag {

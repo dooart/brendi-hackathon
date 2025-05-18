@@ -1,5 +1,6 @@
 import React, { useState, useEffect, RefObject } from 'react';
 import { Message } from '../types';
+import ReactMarkdown from 'react-markdown';
 
 interface ChatPanelProps {
   messages: Message[];
@@ -40,7 +41,11 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             key={index}
             className={`message ${message.role}`}
           >
-            {message.content}
+            {message.role === 'assistant' ? (
+              <ReactMarkdown>{message.content}</ReactMarkdown>
+            ) : (
+              message.content
+            )}
           </div>
         ))}
         {isLoading && (

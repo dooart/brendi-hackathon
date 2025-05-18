@@ -7,7 +7,12 @@ import { Message, Note } from './types';
 import './App.css';
 
 function App() {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>([{
+    role: 'assistant',
+    content: `Welcome to the Study Assistant! I can help you with your studies and automatically create notes from our conversation when I detect important information.
+
+The notes will be displayed in the chat with proper formatting and tags. You can continue our conversation naturally, and I'll create notes when I identify key concepts, definitions, or important information.`
+  }]);
   const [isLoading, setIsLoading] = useState(false);
   const [notes, setNotes] = useState<Note[]>([]);
   const [activeTab, setActiveTab] = useState<'chat' | 'notes' | 'zettelkasten' | 'review'>('chat');
@@ -56,8 +61,8 @@ function App() {
 
     setIsLoading(true);
     try {
-      const newMessage: Message = { role: 'user', content: message };
-      setMessages(prev => [...prev, newMessage]);
+      const userMessage: Message = { role: 'user', content: message };
+      setMessages(prev => [...prev, userMessage]);
 
       const response = await fetch('http://localhost:3001/api/chat', {
         method: 'POST',
@@ -72,19 +77,21 @@ function App() {
       }
 
       const data = await response.json();
-      const assistantMessage: Message = { role: 'assistant', content: data.response };
-      setMessages(prev => [...prev, assistantMessage]);
+      console.log('OpenAI API response:', data);
+      const newMessages: Message[] = [];
+      const assistantMessage: Message = { role: 'assistant', content: data.message };
+      newMessages.push(assistantMessage);
 
-      // Check if a note was created
       if (data.note) {
         const noteMessage: Message = {
           role: 'assistant',
           content: `📝 **New Note Created!**\n\n**${data.note.title}**\n${data.note.content}\n\nTags: ${data.note.tags.join(', ')}`
         };
-        setMessages(prev => [...prev, noteMessage]);
-        // Refresh notes after creating a new one
+        newMessages.push(noteMessage);
         fetchNotes();
       }
+
+      setMessages(prev => [...prev, ...newMessages]);
     } catch (error) {
       console.error('Error sending message:', error);
       const errorMessage: Message = {
@@ -96,16 +103,6 @@ function App() {
       setIsLoading(false);
     }
   };
-
-  // Add initial welcome message
-  useEffect(() => {
-    setMessages([{
-      role: 'assistant',
-      content: `Welcome to the Study Assistant! I can help you with your studies and automatically create notes from our conversation when I detect important information.
-
-The notes will be displayed in the chat with proper formatting and tags. You can continue our conversation naturally, and I'll create notes when I identify key concepts, definitions, or important information.`
-    }]);
-  }, []);
 
   const handleNoteClick = (note: Note) => {
     setSelectedNote(note);
