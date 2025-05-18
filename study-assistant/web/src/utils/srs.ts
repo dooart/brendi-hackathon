@@ -158,4 +158,8 @@ export class SRSManager {
       averageEasiness: states.reduce((sum, state) => sum + state.easiness, 0) / states.length
     };
   }
+
+  public getCurrentSession(): ReviewSession | null {
+    return this.currentSession;
+  }
 } 
