@@ -75,7 +75,7 @@ The notes will be displayed in the chat with proper formatting and tags. You can
       
       const requestBody = { 
         message,
-        history: messages.map(m => ({ role: m.role, content: m.content })),
+        history: [...messages, userMessage].map(m => ({ role: m.role, content: m.content })),
         useRag,
       };
       

@@ -41,6 +41,14 @@ const noteDetection = startNoteDetection(openai, (note: Note) => {
   console.log('Note created:', note.title);
 });
 
+// In-memory upload status map for progress feedback
+const uploadStatus: Record<string, { status: string; progress: number; error?: string }> = {};
+
+// Helper to generate a unique upload ID
+function generateUploadId() {
+  return Math.random().toString(36).substring(2, 10) + Date.now();
+}
+
 function cosineSimilarity(a: number[], b: number[]): number {
   let dot = 0, normA = 0, normB = 0;
   for (let i = 0; i < a.length; i++) {
@@ -49,6 +57,30 @@ function cosineSimilarity(a: number[], b: number[]): number {
     normB += b[i] * b[i];
   }
   return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+function chunkText(text: string, chunkSize = 800): string[] {
+  const chunks = [];
+  let i = 0;
+  while (i < text.length) {
+    let end = i + chunkSize;
+    // Try to break at a paragraph or sentence boundary
+    let nextBreak = text.lastIndexOf('\n', end);
+    if (nextBreak <= i) nextBreak = text.indexOf('\n', end);
+    if (nextBreak > i && nextBreak - i < chunkSize * 1.5) end = nextBreak;
+    chunks.push(text.slice(i, end).trim());
+    i = end;
+  }
+  return chunks.filter(Boolean);
+}
+
+// Helper to batch an array into arrays of max batchSize
+function batchArray<T>(arr: T[], batchSize: number): T[][] {
+  const batches: T[][] = [];
+  for (let i = 0; i < arr.length; i += batchSize) {
+    batches.push(arr.slice(i, i + batchSize));
+  }
+  return batches;
 }
 
 app.post('/api/chat', async (req, res) => {
@@ -66,22 +98,22 @@ app.post('/api/chat', async (req, res) => {
         input: message.slice(0, 8000)
       });
       const queryEmbedding = queryEmbeddingRes.data[0].embedding;
-      // Get all docs and their embeddings
-      const docs = documentDb.getAllDocuments();
-      const docRows = docs.map(doc => {
-        const row = documentDb.getEmbeddingAndText(doc.id);
-        if (!row) return null;
-        return { ...doc, embedding: row.embedding, text: row.text };
-      }).filter(Boolean);
-      // Compute similarity
-      const scored = docRows
-        .filter((doc): doc is typeof docRows[0] & { embedding: number[]; text: string } => !!doc && !!doc.embedding && !!doc.text)
-        .map(doc => ({ ...doc, score: cosineSimilarity(queryEmbedding, doc.embedding) }));
+      // Get all chunks and their embeddings
+      const chunks = documentDb.getAllChunks();
+      const scored = chunks.map(chunk => ({
+        ...chunk,
+        score: cosineSimilarity(queryEmbedding, chunk.embedding)
+      }));
       scored.sort((a, b) => b.score - a.score);
-      const topDocs = scored.slice(0, 2).filter(d => d.score > 0.2);
-      if (topDocs.length > 0) {
-        ragContext = topDocs.map(d => `Document: ${d.title}\n${d.text ? d.text.slice(0, 2000) : ''}`).join('\n---\n');
+      const topChunks = scored.slice(0, 3).filter(d => d.score > 0.2);
+      if (topChunks.length > 0) {
+        ragContext = topChunks.map(chunk => {
+          const meta = documentDb.getChunkWithDocMeta(chunk.id);
+          return meta ? `Source: ${meta.title} (${meta.originalname})\n${chunk.chunk_text}` : chunk.chunk_text;
+        }).join('\n---\n');
       }
+    } else {
+      console.log('[RAG] RAG is disabled for this request');
     }
 
     // Use history if provided, otherwise fallback to old behavior
@@ -239,29 +271,58 @@ app.patch('/api/notes/:id', (req, res) => {
 
 // Upload PDF, extract text, embed, save
 app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
+  const uploadId = generateUploadId();
+  uploadStatus[uploadId] = { status: 'Uploading file...', progress: 0 };
   try {
     const reqWithFile = req as Request & { file?: Express.Multer.File };
-    if (!reqWithFile.file) return res.status(400).json({ error: 'No file uploaded' });
+    if (!reqWithFile.file) {
+      uploadStatus[uploadId] = { status: 'No file uploaded', progress: 0, error: 'No file uploaded' };
+      return res.status(400).json({ error: 'No file uploaded', uploadId });
+    }
+    uploadStatus[uploadId] = { status: 'Extracting text...', progress: 10 };
     const { originalname, path: filePath } = reqWithFile.file;
     const dataBuffer = fs.readFileSync(filePath);
     const pdfData = await pdfParse(dataBuffer);
     const text = pdfData.text;
     const title = originalname.replace(/\.pdf$/i, '');
-    // Generate embedding with OpenAI
+    uploadStatus[uploadId] = { status: 'Creating document embedding...', progress: 20 };
     const embeddingRes = await openai.embeddings.create({
       model: 'text-embedding-3-small',
-      input: text.slice(0, 8000) // Truncate for embedding API limits
+      input: text.slice(0, 8000)
     });
     const embedding = embeddingRes.data[0].embedding;
-    // Save to new documents DB
-    const docId = documentDb.saveDocument({ title, originalname, embedding, text });
-    // Delete the uploaded file after processing
+    uploadStatus[uploadId] = { status: 'Splitting into chunks...', progress: 30 };
+    const chunks = chunkText(text, 800);
+    const BATCH_SIZE = 100;
+    const chunkBatches = batchArray(chunks, BATCH_SIZE);
+    let allEmbeddings: number[][] = [];
+    let batchNum = 0;
+    for (const batch of chunkBatches) {
+      uploadStatus[uploadId] = { status: `Creating chunk embeddings (batch ${batchNum + 1} of ${chunkBatches.length})...`, progress: 30 + Math.floor(60 * (batchNum / chunkBatches.length)) };
+      const batchRes = await openai.embeddings.create({
+        model: 'text-embedding-3-small',
+        input: batch
+      });
+      allEmbeddings = allEmbeddings.concat(batchRes.data.map(d => d.embedding));
+      batchNum++;
+    }
+    uploadStatus[uploadId] = { status: 'Saving to database...', progress: 95 };
+    const chunkRecords = chunks.map((chunk, idx) => ({ chunk_index: idx, chunk_text: chunk, embedding: allEmbeddings[idx] }));
+    const docId = documentDb.saveDocumentWithChunks({ title, originalname, embedding, text, chunks: chunkRecords });
     fs.unlinkSync(filePath);
-    res.json({ id: docId, title, originalname });
+    uploadStatus[uploadId] = { status: 'Upload complete!', progress: 100 };
+    res.json({ id: docId, title, originalname, uploadId });
   } catch (err) {
     console.error('Upload error:', err);
-    res.status(500).json({ error: 'Failed to process document' });
+    uploadStatus[uploadId] = { status: 'Error', progress: 0, error: 'Failed to process document' };
+    res.status(500).json({ error: 'Failed to process document', uploadId });
   }
+});
+
+// Endpoint for polling upload status
+app.get('/api/documents/upload-status/:uploadId', (req, res) => {
+  const { uploadId } = req.params;
+  res.json(uploadStatus[uploadId] || { status: 'Unknown upload', progress: 0 });
 });
 
 // List all documents

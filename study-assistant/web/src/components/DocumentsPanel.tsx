@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 interface DocumentMeta {
   id: number;
@@ -16,6 +16,8 @@ const DocumentsPanel: React.FC = () => {
   const [documents, setDocuments] = useState<DocumentMeta[]>([]);
   const [isLoadingDocs, setIsLoadingDocs] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchDocuments = async () => {
     setIsLoadingDocs(true);
@@ -71,96 +73,99 @@ const DocumentsPanel: React.FC = () => {
     }
   };
 
+  const filteredDocuments = documents.filter(doc => 
+    doc.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    doc.originalname.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // Drag and drop upload
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      setSelectedFile(e.dataTransfer.files[0]);
+    }
+  };
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+  };
+
   return (
-    <div style={{ padding: 32 }}>
-      <h2 style={{ color: '#4a9eff', fontWeight: 700, marginBottom: 18 }}>Upload PDF Documents</h2>
-      <div style={{
-        background: '#23272f',
-        borderRadius: 16,
-        padding: '32px 28px',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
-        maxWidth: 420,
-        margin: '0 auto',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: 18
-      }}>
-        <input
-          type="file"
-          accept="application/pdf"
-          onChange={e => setSelectedFile(e.target.files?.[0] || null)}
-          style={{ marginBottom: 12 }}
-          disabled={isUploading}
-        />
-        {selectedFile && (
-          <div style={{ color: '#b0b8c1', fontSize: 15 }}>
-            Selected file: <span style={{ color: '#7f53ff', fontWeight: 600 }}>{selectedFile.name}</span>
+    <div className="documents-container">
+      <h2 className="documents-title">📚 Document Library</h2>
+      <div className="documents-upload-section">
+        <div
+          className={`upload-area${selectedFile ? ' has-file' : ''}`}
+          onClick={() => fileInputRef.current?.click()}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+        >
+          <input
+            type="file"
+            accept="application/pdf"
+            ref={fileInputRef}
+            className="upload-input"
+            onChange={e => setSelectedFile(e.target.files?.[0] || null)}
+            disabled={isUploading}
+          />
+          <div className="upload-icon">📤</div>
+          <div className="upload-text">
+            {selectedFile ? (
+              <span className="selected-file">{selectedFile.name}</span>
+            ) : (
+              <>
+                <span className="upload-cta">Click or drag a PDF here to upload</span>
+                <span className="upload-hint">Max 1 file at a time</span>
+              </>
+            )}
           </div>
-        )}
+        </div>
         <button
-          style={{
-            background: 'linear-gradient(90deg, #4a9eff 0%, #7f53ff 100%)',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 8,
-            padding: '10px 24px',
-            fontWeight: 600,
-            fontSize: 16,
-            cursor: selectedFile && !isUploading ? 'pointer' : 'not-allowed',
-            opacity: selectedFile && !isUploading ? 1 : 0.6
-          }}
-          disabled={!selectedFile || isUploading}
+          className="upload-btn"
           onClick={handleUpload}
-        >{isUploading ? 'Uploading...' : 'Upload'}</button>
-        {isUploading && <div style={{ color: '#7f53ff', fontSize: 15 }}>Uploading...</div>}
-        {uploadSuccess && <div style={{ color: '#22c55e', fontSize: 15 }}>{uploadSuccess}</div>}
-        {uploadError && <div style={{ color: '#ff5c5c', fontSize: 15 }}>{uploadError}</div>}
+          disabled={!selectedFile || isUploading}
+        >
+          {isUploading ? 'Uploading...' : 'Upload Document'}
+        </button>
+        {uploadSuccess && <div className="upload-success">{uploadSuccess}</div>}
+        {uploadError && <div className="upload-error">{uploadError}</div>}
       </div>
-      <div style={{ marginTop: 40 }}>
-        <h3 style={{ color: '#b0b8c1', fontWeight: 600, fontSize: 18 }}>Uploaded Documents</h3>
+      <div className="documents-list-section">
+        <div className="documents-list-header">
+          <h3>Your Documents</h3>
+          <input
+            type="text"
+            className="documents-search"
+            placeholder="Search documents..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
+        </div>
         {isLoadingDocs ? (
-          <div style={{ color: '#7f53ff', fontSize: 15 }}>Loading...</div>
-        ) : documents.length === 0 ? (
-          <div style={{ color: '#b0b8c1', fontSize: 15, marginTop: 12 }}>
-            <em>No documents uploaded yet.</em>
+          <div className="documents-loading">Loading...</div>
+        ) : filteredDocuments.length === 0 ? (
+          <div className="documents-empty">
+            {searchQuery ? 'No matching documents found.' : 'No documents uploaded yet.'}
           </div>
         ) : (
-          <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-            {documents.map(doc => (
-              <li key={doc.id} style={{
-                background: '#23272f',
-                borderRadius: 12,
-                marginBottom: 14,
-                padding: '16px 18px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                boxShadow: '0 1px 4px #4a9eff11',
-                border: '1px solid #4a9eff22',
-              }}>
-                <div>
-                  <div style={{ color: '#7f53ff', fontWeight: 600, fontSize: 16 }}>{doc.title}</div>
-                  <div style={{ color: '#b0b8c1', fontSize: 13 }}>{doc.originalname}</div>
-                  <div style={{ color: '#b0b8c1', fontSize: 12, marginTop: 2 }}>Uploaded: {new Date(doc.created_at).toLocaleString()}</div>
+          <div className="documents-grid">
+            {filteredDocuments.map(doc => (
+              <div className="document-card" key={doc.id}>
+                <div className="document-card-header">
+                  <span className="document-icon">📄</span>
+                  <span className="document-title" title={doc.title}>{doc.title}</span>
                 </div>
+                <div className="document-meta" title={doc.originalname}>{doc.originalname}</div>
+                <div className="document-meta-time">🕒 {new Date(doc.created_at).toLocaleString()}</div>
                 <button
+                  className="document-delete"
                   onClick={() => handleDelete(doc.id)}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: '#ff5c5c',
-                    fontSize: 20,
-                    cursor: 'pointer',
-                    marginLeft: 18,
-                  }}
                   title="Delete document"
-                >×</button>
-              </li>
+                >🗑️</button>
+              </div>
             ))}
-          </ul>
+          </div>
         )}
-        {deleteError && <div style={{ color: '#ff5c5c', fontSize: 15 }}>{deleteError}</div>}
+        {deleteError && <div className="upload-error">{deleteError}</div>}
       </div>
     </div>
   );
