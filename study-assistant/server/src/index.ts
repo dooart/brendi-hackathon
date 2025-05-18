@@ -250,7 +250,7 @@ app.post('/api/chat', async (req, res) => {
       model: "gpt-4.1-mini",
       messages: finalMessages,
       temperature: 0.7,
-      max_tokens: 500
+      max_tokens: 1500
     });
 
     const aiResponse = response.choices[0].message.content;

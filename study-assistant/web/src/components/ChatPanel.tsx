@@ -47,9 +47,9 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             className={`message ${message.role}`}
             style={{
               maxWidth: '80%',
-              margin: message.role === 'assistant' ? '8px 0 8px auto' : '8px auto 8px 0',
-              alignSelf: message.role === 'assistant' ? 'flex-end' : 'flex-start',
-              background: message.role === 'assistant' ? '#23272f' : '#353b48',
+              margin: message.role === 'user' ? '8px 0 8px auto' : '8px auto 8px 0',
+              alignSelf: message.role === 'user' ? 'flex-end' : 'flex-start',
+              background: message.role === 'user' ? '#23272f' : '#353b48',
               color: '#e6e6e6',
               borderRadius: 18,
               padding: '18px 26px',
@@ -67,7 +67,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           </div>
         ))}
         {isLoading && (
-          <div className="message assistant" style={{ maxWidth: '80%', margin: '8px 0 8px auto', alignSelf: 'flex-end', background: '#23272f', color: '#e6e6e6', borderRadius: 18, padding: '12px 18px', fontSize: 16 }}>
+          <div className="message assistant" style={{ maxWidth: '80%', margin: '8px auto 8px 0', alignSelf: 'flex-start', background: '#353b48', color: '#e6e6e6', borderRadius: 18, padding: '18px 26px', fontSize: 16 }}>
             <div className="typing-indicator">
               <span></span>
               <span></span>
