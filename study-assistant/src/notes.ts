@@ -137,7 +137,8 @@ const generateNote = async (
       "- Use markdown for better readability",
       "- Focus on the most important information",
       "- Include only relevant tags",
-      "- Structure the content with headers and bullet points"
+      "- Structure the content with headers and bullet points",
+      "- IMPORTANT: When outputting mathematical expressions, always use $...$ for inline math and $$...$$ for block math, following standard Markdown+LaTeX conventions. Do NOT use [ ... ], ( ... ), or \\( ... \\) for math. For example: Inline: $x = 2y + 1$. Block: $$\\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}$$. Always ensure all math is properly delimited for Markdown rendering."
     ].join("\n");
 
     const response = await openai.chat.completions.create({

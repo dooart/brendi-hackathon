@@ -1494,4 +1494,11 @@ textarea:focus {
 .message * {
   overflow-y: visible !important;
   max-height: none !important;
+}
+
+/* Prevent vertical scrollbars and max-height in assistant bubbles */
+.message.assistant,
+.message.assistant * {
+  overflow-y: visible !important;
+  max-height: none !important;
 } 

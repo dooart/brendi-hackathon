@@ -52,4 +52,33 @@ code {
 }
 .toggle-switch input:checked + .toggle-slider:before {
   transform: translateX(20px);
+}
+
+/* --- KaTeX Math Rendering Support --- */
+@import '../node_modules/katex/dist/katex.min.css';
+
+/* Ensure KaTeX math is always visible and not clipped */
+.katex, .katex-display, .math-display, .math-inline {
+  overflow: visible !important;
+  max-width: 100%;
+  word-break: break-word;
+}
+
+/* --- Chat Bubble Overflow Fix --- */
+.message {
+  overflow: visible !important;
+  max-height: none !important;
+  word-break: break-word;
+  white-space: pre-line;
+}
+
+/* Prevent scrollbars in chat bubbles */
+.message::-webkit-scrollbar {
+  display: none;
+}
+
+/* Optional: Make sure parent containers do not constrain height */
+.messages {
+  max-height: none !important;
+  overflow: visible !important;
 } 

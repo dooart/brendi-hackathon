@@ -11,13 +11,92 @@ interface MarkdownRendererProps {
 
 // Preprocess to convert [ ... ] to $...$ for inline math and $$...$$ for block math
 function preprocessMath(content: string): string {
+  // Convert \$\$ ... \$\$ to $$ ... $$ for block math
+  let processed = content.replace(/\\\$\\\$([\s\S]*?)\\\$\\\$/g, (match, math) => `$$${math}$$`);
   // Convert [ ... ] to $...$ (only if it looks like LaTeX)
-  // This is a simple heuristic: if inside brackets and contains \\ or ^ or _ or frac
-  return content.replace(/\[([^\]]*\\[a-zA-Z]+[^\]]*)\]/g, (match, p1) => `$${p1}$`);
+  processed = processed.replace(/\[([^\]]*\\[a-zA-Z]+[^\]]*)\]/g, (match, p1) => `$${p1}$`);
+  // Convert (\math... ) to $...$ for inline math
+  processed = processed.replace(/\((\\[a-zA-Z]+[^\)]*)\)/g, (match, p1) => `$${p1}$`);
+  // Convert [\math... ] to $$...$$ for block math
+  processed = processed.replace(/\[(\\[a-zA-Z]+[^\]]*)\]/g, (match, p1) => `$$${p1}$$`);
+  // Convert any $...$ block containing a newline into $$...$$
+  processed = processed.replace(/\$([^$\n]*\n[^$]*)\$/g, (match, p1) => `$$${p1}$$`);
+  // Escape underscores in math mode (inside $...$ and $$...$$)
+  processed = processed.replace(/\$\$([\s\S]*?)\$\$/g, (match, math) => {
+    return `$$${math.replace(/([a-zA-Z0-9])_([a-zA-Z0-9])/g, '$1_{ $2 }')}$$`;
+  });
+  processed = processed.replace(/\$([^$\n]+)\$/g, (match, math) => {
+    return `$${math.replace(/([a-zA-Z0-9])_([a-zA-Z0-9])/g, '$1_{ $2 }')}$`;
+  });
+
+  // --- NEW: Ensure only math is inside $$...$$ blocks ---
+  // This will split any block like: $$math$$ text -> $$math$$\ntext
+  processed = processed.replace(/\$\$([\s\S]*?)\$\$(?!\$)/g, (match, math) => {
+    // Split at the first occurrence of a linebreak followed by non-math text
+    const split = math.split(/(?<=\S)\n(?=[^\\$\\\\])/);
+    if (split.length > 1) {
+      return `$$${split[0]}$$\n${split.slice(1).join('\n')}`;
+    }
+    // Also split if there is a 'where' or other text after the math
+    const whereIdx = math.indexOf('where ');
+    if (whereIdx !== -1) {
+      return `$$${math.slice(0, whereIdx).trim()}$$\n${math.slice(whereIdx)}`;
+    }
+    return `$$${math}$$`;
+  });
+
+  // --- NEW: Replace | in subscripts/superscripts with \mid for KaTeX ---
+  // _{...|...} => _{...\mid...}, ^{...|...} => ^{...\mid...}
+  processed = processed.replace(/_\{([^}]*)\|([^}]*)\}/g, '_{$1\\mid $2}');
+  processed = processed.replace(/\^\{([^}]*)\|([^}]*)\}/g, '^{$1\\mid $2}');
+
+  // --- NEW: Remove all $$ inside math blocks (except delimiters) ---
+  // This will remove any accidental double-wrapping or $$ inside math
+  processed = processed.replace(/\$\$([\s\S]*?)\$\$/g, (match, math) => {
+    // Remove any $$ inside the math block
+    const cleaned = math.replace(/\$\$/g, '');
+    return `$$${cleaned}$$`;
+  });
+
+  // --- NEW: Remove stray \\ lines between blocks ---
+  processed = processed.replace(/\\\s*\n/g, '\n');
+  processed = processed.replace(/\\\s*$/gm, '');
+
+  // --- NEW: Remove empty lines between math blocks ---
+  processed = processed.replace(/\n{2,}/g, '\n\n');
+
+  // Convert $...$ on its own line (block) to $$...$$, even at end of file or with spaces
+  processed = processed.replace(/(^|[\n\r])\$\s*[\n\r]+([\s\S]*?)[\n\r]+\$([\n\r]|$)/g, '$1$$\n$2\n$$$3');
+  // Fallback: block math at end of file without trailing newline
+  processed = processed.replace(/(^|[\n\r])\$\s*[\n\r]+([\s\S]*?)\s*\$(\s*)$/g, '$1$$\n$2\n$$$3');
+
+  return processed;
+}
+
+// Aggressive preprocessing: convert all [ ... ] (anywhere) to $$ ... $$ for block math
+function simplePreprocess(content: string): string {
+  // Replace all [ ... ] with $$ ... $$, even inline (not recommended for general markdown)
+  let processed = content.replace(/\[\s*([\s\S]*?)\s*\]/g, (_, math) => `$$\n${math}\n$$`);
+  // Remove any line that contains only a backslash inside a block math environment
+  processed = processed.replace(/\$\$([\s\S]*?)\$\$/g, (match, math) => {
+    const cleaned = math.replace(/^\s*\\\s*$/gm, '');
+    return `$$${cleaned}$$`;
+  });
+  // Convert \( ... \) to $...$
+  processed = processed.replace(/\\\(([^]*?)\\\)/g, (_, math) => `$${math}$`);
+  // Convert \[ ... \] to $$...$$
+  processed = processed.replace(/\\\[([^]*?)\\\]/g, (_, math) => `$$${math}$$`);
+  // Ensure blank lines before and after every block math
+  processed = processed.replace(/([^\n])\$\$/g, '$1\n$$'); // blank line before
+  processed = processed.replace(/(\$\$[\s\S]*?\$\$)([^\n])/g, '$1\n$2'); // blank line after
+  processed = processed.replace(/^(\$\$)/gm, '\n$1');
+  processed = processed.replace(/(\$\$)$/gm, '$1\n');
+  return processed;
 }
 
 export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className }) => {
-  const processed = preprocessMath(content);
+  // Bypass simplePreprocess for debugging math rendering
+  // const processed = simplePreprocess(content);
   return (
     <div className={className}>
       <ReactMarkdown
@@ -80,7 +159,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
           }
         }}
       >
-        {processed}
+        {content}
       </ReactMarkdown>
     </div>
   );

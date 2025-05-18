@@ -109,13 +109,19 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         </span>
       </div>
       <form onSubmit={handleSubmit} className="input-form" style={{ width: '100%', maxWidth: 600, margin: '0 auto', display: 'flex', gap: 8, padding: '0 0 18px 0' }}>
-        <input
-          type="text"
+        <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Type your message..."
           disabled={isLoading}
-          style={{ flex: 1, fontSize: 16, borderRadius: 16, border: '1px solid #23272f', padding: '10px 16px', background: '#181a20', color: '#e6e6e6', outline: 'none' }}
+          style={{ flex: 1, fontSize: 16, borderRadius: 16, border: '1px solid #23272f', padding: '10px 16px', background: '#181a20', color: '#e6e6e6', outline: 'none', resize: 'vertical', minHeight: 40, maxHeight: 180 }}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              handleSubmit(e);
+            }
+            // Shift+Enter inserts newline by default
+          }}
         />
         <button
           type="submit"

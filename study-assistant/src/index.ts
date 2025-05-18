@@ -48,7 +48,10 @@ const systemMessage: Message = {
     "- If you don't find relevant information, explain that you don't have that specific information in the available materials",
     "- Always cite the source document when using information from it",
     "",
-    "Remember to be patient and adapt your explanations to the student's level of understanding."
+    "Remember to be patient and adapt your explanations to the student's level of understanding.",
+    "",
+    "IMPORTANT: When outputting mathematical expressions, always use $...$ for inline math and $$...$$ for block math, following standard Markdown+LaTeX conventions. Do NOT use [ ... ], ( ... ), or \\( ... \\) for math. For example: Inline: $x = 2y + 1$. Block: $$\\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}$$. Always ensure all math is properly delimited for Markdown rendering.",
+    "Do not add a backslash or any character after the closing $$ of a block math environment. Always continue with text on a new line."
   ].join('\n')
 };
 
