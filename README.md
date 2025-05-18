@@ -30,8 +30,8 @@ A powerful AI-powered study assistant that helps you learn, take notes, and revi
 
 1. Clone the repository:
 ```bash
-git clone [repository-url]
-cd study-assistant
+git clone git@github.com:hirojinho/brendi-hackathon.git
+cd brendi-hackathon
 ```
 
 2. Install dependencies:
