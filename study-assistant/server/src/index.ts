@@ -32,14 +32,22 @@ const noteDetection = startNoteDetection(openai, (note: Note) => {
 
 app.post('/api/chat', async (req, res) => {
   try {
-    const { message } = req.body;
-    if (!message) {
-      return res.status(400).json({ error: 'Message is required' });
+    const { message, history } = req.body;
+    if (!message && !history) {
+      return res.status(400).json({ error: 'Message or history is required' });
     }
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4.1-mini",
-      messages: [
+    let messages;
+    if (history && Array.isArray(history) && history.length > 0) {
+      // If the last message is not the current user message, append it
+      const last = history[history.length - 1];
+      if (!last || last.role !== 'user' || last.content !== message) {
+        messages = [...history, { role: 'user', content: message }];
+      } else {
+        messages = history;
+      }
+    } else {
+      messages = [
         {
           role: "system",
           content: "You are a helpful study assistant. Format your responses using markdown for better readability. Use code blocks, bullet points, and text emphasis where appropriate."
@@ -48,7 +56,12 @@ app.post('/api/chat', async (req, res) => {
           role: "user",
           content: message
         }
-      ],
+      ];
+    }
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4.1-mini",
+      messages,
       temperature: 0.7,
       max_tokens: 500
     });
@@ -86,9 +99,23 @@ app.post('/api/chat', async (req, res) => {
 
 app.post('/api/chat-local', async (req, res) => {
   try {
-    const { message } = req.body;
-    if (!message) {
-      return res.status(400).json({ error: 'Message is required' });
+    const { message, history } = req.body;
+    if (!message && !history) {
+      return res.status(400).json({ error: 'Message or history is required' });
+    }
+    let messages;
+    if (history && Array.isArray(history) && history.length > 0) {
+      const last = history[history.length - 1];
+      if (!last || last.role !== 'user' || last.content !== message) {
+        messages = [...history, { role: 'user', content: message }];
+      } else {
+        messages = history;
+      }
+    } else {
+      messages = [
+        { role: 'system', content: 'You are a helpful study assistant. Format your responses using markdown for better readability. Use code blocks, bullet points, and text emphasis where appropriate.' },
+        { role: 'user', content: message }
+      ];
     }
     // Send to Ollama local model
     const ollamaRes = await fetch('http://localhost:11434/api/chat', {
@@ -96,10 +123,7 @@ app.post('/api/chat-local', async (req, res) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'phi3:latest', // You can change to another local model if desired
-        messages: [
-          { role: 'system', content: 'You are a helpful study assistant. Format your responses using markdown for better readability. Use code blocks, bullet points, and text emphasis where appropriate.' },
-          { role: 'user', content: message }
-        ],
+        messages,
         stream: false
       })
     });

@@ -21,7 +21,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ notes, onNoteClick, mo
     dueNotes: number;
     averageEasiness: number;
   } | null>(null);
-  const [chatHistory, setChatHistory] = useState<{role: 'user' | 'assistant', content: string}[]>([]);
+  const [chatHistory, setChatHistory] = useState<{role: 'user' | 'assistant' | 'system', content: string}[]>([]);
   const [isChatting, setIsChatting] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
@@ -34,9 +34,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ notes, onNoteClick, mo
   }, [notes, srsManager]);
 
   const startReview = async () => {
-    console.log('Starting review with notes:', notes);
     const session = srsManager.startReviewSession(notes);
-    console.log('Review session notes:', session.notes);
     if (session.notes.length === 0) {
       setFeedback("No notes are due for review at this time.");
       return;
@@ -68,7 +66,17 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ notes, onNoteClick, mo
       const response = await fetch(`http://localhost:3001${getEndpoint()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: `Generate a review question for the following note:\n\n${note.content}` }),
+        body: JSON.stringify({ 
+          message: `You are a helpful study assistant. Generate a challenging but fair question to test understanding of the following note. The question should:
+1. Test deep understanding rather than just memorization
+2. Be clear and specific
+3. NOT include the answer or hints
+4. Be appropriate for the content level
+5. Encourage critical thinking
+
+Note to review:
+${note.content}` 
+        }),
       });
 
       if (!response.ok) {
@@ -92,12 +100,44 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ notes, onNoteClick, mo
     setIsLoading(true);
     setDisableActions(true);
     try {
-      // Start a conversation with the LLM for personalized feedback
+      const currentNote = srsManager.getCurrentNote();
+      const note = notes.find(n => n.id === currentNote?.noteId);
+      
+      const requestBody = { 
+        message: `You are a helpful study assistant providing personalized feedback. Your role is to:
+1. Analyze the student's answer thoughtfully
+2. Provide constructive feedback that helps them learn
+3. Identify misconceptions and explain them clearly
+4. Suggest ways to improve understanding
+5. Be encouraging and supportive
+6. Be ready for follow-up questions
+7. Maintain context of the conversation
+
+Original Note Content:
+${note?.content}
+
+Question: ${currentQuestion}
+
+Student's Answer: ${userAnswer}
+
+Please provide personalized feedback and be ready for further questions.`,
+        history: [
+          { 
+            role: 'system', 
+            content: `You are a helpful study assistant providing personalized feedback. You are discussing the following note:\n\n${note?.content}\n\nKeep this context in mind throughout the conversation.` 
+          },
+          { role: 'assistant', content: `Here is the question based on the note:\n\n${currentQuestion}` },
+          { role: 'user', content: userAnswer }
+        ]
+      };
+      
+      console.log('Submitting answer - Request to model:', JSON.stringify(requestBody, null, 2));
+      
       const getEndpoint = () => model === 'openai' ? '/api/chat' : '/api/chat-local';
       const response = await fetch(`http://localhost:3001${getEndpoint()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: `Analyze the following answer for the question: ${currentQuestion}\n\nAnswer: ${userAnswer}\n\nProvide personalized feedback and be ready for further questions.` }),
+        body: JSON.stringify(requestBody),
       });
       if (!response.ok) {
         throw new Error('Failed to analyze answer');
@@ -106,12 +146,17 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ notes, onNoteClick, mo
       const feedback = data.message;
       setFeedback(feedback);
       setChatHistory([
-        { role: 'assistant' as 'assistant', content: feedback }
+        { 
+          role: 'system', 
+          content: `You are a helpful study assistant providing personalized feedback. You are discussing the following note:\n\n${note?.content}\n\nKeep this context in mind throughout the conversation.` 
+        },
+        { role: 'assistant', content: `Here is the question based on the note:\n\n${currentQuestion}` },
+        { role: 'user', content: userAnswer },
+        { role: 'assistant', content: feedback }
       ]);
       setIsChatting(true);
       setShowFeedback(true);
     } catch (error) {
-      console.error('Error analyzing answer:', error);
       setFeedback('Failed to analyze answer. Please try again.');
       setShowFeedback(true);
     } finally {
@@ -132,14 +177,35 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ notes, onNoteClick, mo
     setIsChatLoading(true);
     setChatInput('');
     try {
+      const currentNote = srsManager.getCurrentNote();
+      const note = notes.find(n => n.id === currentNote?.noteId);
+      
+      const requestBody = {
+        message: `You are a helpful study assistant. Your role is to:
+1. Help students understand complex concepts
+2. Provide clear and concise explanations
+3. Use examples and analogies when helpful
+4. Break down complex topics into simpler parts
+5. Check for understanding
+6. Be encouraging and supportive
+7. Maintain context of the conversation
+
+Current question: ${currentQuestion}
+
+${chatInput}`,
+        history: newHistory.map(m => ({ 
+          role: m.role as 'user' | 'assistant' | 'system', 
+          content: m.content 
+        }))
+      };
+      
+      console.log('Sending chat - Request to model:', JSON.stringify(requestBody, null, 2));
+      
       const getEndpoint = () => model === 'openai' ? '/api/chat' : '/api/chat-local';
       const response = await fetch(`http://localhost:3001${getEndpoint()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: chatInput,
-          history: newHistory.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }))
-        })
+        body: JSON.stringify(requestBody)
       });
       if (!response.ok) throw new Error('Failed to get response');
       const data = await response.json();

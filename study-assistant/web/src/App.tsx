@@ -28,7 +28,6 @@ The notes will be displayed in the chat with proper formatting and tags. You can
         throw new Error('Failed to fetch notes');
       }
       const data = await response.json();
-      console.log('Raw notes from backend:', data.notes);
       const parsedNotes = data.notes.map((note: any) => ({
         ...note,
         nextReview: note.nextReview ? new Date(note.nextReview) : undefined,
@@ -36,7 +35,6 @@ The notes will be displayed in the chat with proper formatting and tags. You can
         createdAt: new Date(note.createdAt),
         lastModified: new Date(note.lastModified),
       }));
-      console.log('Parsed notes:', parsedNotes);
       setNotes(parsedNotes);
     } catch (error) {
       console.error('Error fetching notes:', error);
@@ -73,12 +71,18 @@ The notes will be displayed in the chat with proper formatting and tags. You can
       const userMessage: Message = { role: 'user', content: message };
       setMessages(prev => [...prev, userMessage]);
       const endpoint = model === 'openai' ? '/api/chat' : '/api/chat-local';
+      
+      const requestBody = { 
+        message,
+        history: messages.map(m => ({ role: m.role, content: m.content }))
+      };
+      
       const response = await fetch(`http://localhost:3001${endpoint}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify(requestBody),
       });
       if (!response.ok) {
         throw new Error('Failed to get response');
