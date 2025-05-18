@@ -13,6 +13,12 @@ export interface Note {
     conversationId: string;
     messageIndex: number;
   };
+  nextReview?: Date;
+  interval?: number;
+  easiness?: number;
+  repetitions?: number;
+  lastReview?: Date;
+  lastPerformance?: number;
 }
 
 interface NoteDetectionCriteria {
@@ -57,7 +63,7 @@ async function shouldCreateNote(
 
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4-turbo-preview",
+      model: "gpt4.1-mini",
       messages: [
         {
           role: "system",
@@ -88,7 +94,7 @@ async function generateNote(
 ): Promise<Note> {
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4-turbo-preview",
+      model: "gpt4.1-mini",
       messages: [
         {
           role: "system",
@@ -135,7 +141,13 @@ Format the response as JSON with this structure:
       source: {
         conversationId,
         messageIndex
-      }
+      },
+      nextReview: undefined,
+      interval: undefined,
+      easiness: undefined,
+      repetitions: undefined,
+      lastReview: undefined,
+      lastPerformance: undefined
     };
   } catch (error) {
     console.error("Error generating note:", error);

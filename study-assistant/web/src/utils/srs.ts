@@ -48,48 +48,49 @@ export class SRSManager {
     this.currentSession = null;
   }
 
-  public initializeNote(noteId: string): void {
-    if (!this.reviewStates.has(noteId)) {
-      this.reviewStates.set(noteId, {
-        noteId,
-        nextReview: new Date(),
-        interval: INITIAL_INTERVAL,
-        easiness: INITIAL_EASINESS,
-        repetitions: 0,
-        lastReview: null,
-        lastPerformance: null
+  // Initialize review state from backend SRS fields in notes
+  public initializeFromNotes(notes: Note[]): void {
+    this.reviewStates.clear();
+    console.log('Initializing review states from notes:', notes);
+    for (const note of notes) {
+      this.reviewStates.set(note.id, {
+        noteId: note.id,
+        nextReview: note.nextReview ? new Date(note.nextReview) : new Date(),
+        interval: note.interval ?? 1,
+        easiness: note.easiness ?? 2.5,
+        repetitions: note.repetitions ?? 0,
+        lastReview: note.lastReview ? new Date(note.lastReview) : null,
+        lastPerformance: note.lastPerformance ?? null
       });
     }
+    console.log('Review states after initialization:', Array.from(this.reviewStates.entries()));
   }
 
   public getNotesForReview(notes: Note[]): Note[] {
     const now = new Date();
-    return notes.filter(note => {
+    console.log('getNotesForReview called with notes:', notes);
+    const dueNotes = notes.filter(note => {
       const state = this.reviewStates.get(note.id);
       if (!state) {
-        this.initializeNote(note.id);
+        console.log('Note not initialized:', note.id);
         return true;
       }
-      return state.nextReview <= now;
+      const isDue = state.nextReview <= now;
+      console.log('Note due check:', note.id, isDue, state.nextReview);
+      return isDue;
     });
+    console.log('Due notes:', dueNotes);
+    return dueNotes;
   }
 
   public startReviewSession(notes: Note[]): ReviewSession {
+    this.initializeFromNotes(notes);
     const notesForReview = this.getNotesForReview(notes);
-    
     this.currentSession = {
       id: `review_${Date.now()}`,
       startTime: new Date(),
       endTime: null,
-      notes: notesForReview.map(note => this.reviewStates.get(note.id) || {
-        noteId: note.id,
-        nextReview: new Date(),
-        interval: INITIAL_INTERVAL,
-        easiness: INITIAL_EASINESS,
-        repetitions: 0,
-        lastReview: null,
-        lastPerformance: null
-      }),
+      notes: notesForReview.map(note => this.reviewStates.get(note.id)!),
       currentNoteIndex: 0,
       performance: {
         correct: 0,
@@ -97,27 +98,22 @@ export class SRSManager {
         skipped: 0
       }
     };
-
     return this.currentSession;
   }
 
-  public updateReviewPerformance(performance: number): void {
+  public updateReviewPerformance(performance: number): ReviewState | undefined {
     if (!this.currentSession) return;
-
     const currentNote = this.currentSession.notes[this.currentSession.currentNoteIndex];
     if (!currentNote) return;
-
-    // Update performance tracking
     if (performance >= 3) {
       this.currentSession.performance.correct++;
     } else {
       this.currentSession.performance.incorrect++;
     }
-
-    // Update SRS state
     const newState = calculateNextReview(currentNote, performance);
     this.reviewStates.set(currentNote.noteId, newState);
     this.currentSession.notes[this.currentSession.currentNoteIndex] = newState;
+    return newState;
   }
 
   public skipCurrentNote(): void {

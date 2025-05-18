@@ -16,6 +16,7 @@
   "dependencies": {
     "@types/force-graph": "^1.21.2",
     "force-graph": "^1.49.6",
+    "marked": "^15.0.11",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-markdown": "^9.0.1"

@@ -15,6 +15,12 @@ export interface Note {
     conversationId: string;
     messageIndex: number;
   };
+  nextReview?: Date;
+  interval?: number;
+  easiness?: number;
+  repetitions?: number;
+  lastReview?: Date | null;
+  lastPerformance?: number | null;
 }
 
 export interface ReviewState {

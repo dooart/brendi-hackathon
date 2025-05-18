@@ -37,7 +37,7 @@ app.post('/api/chat', async (req, res) => {
     }
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4-turbo-preview",
+      model: "gpt-4.1-mini",
       messages: [
         {
           role: "system",
@@ -101,6 +101,37 @@ app.delete('/api/notes/:id', (req, res) => {
   } catch (error) {
     console.error('Error deleting note:', error);
     res.status(500).json({ error: 'Failed to delete note' });
+  }
+});
+
+app.patch('/api/notes/:id', (req, res) => {
+  try {
+    const noteId = req.params.id;
+    const {
+      nextReview,
+      interval,
+      easiness,
+      repetitions,
+      lastReview,
+      lastPerformance
+    } = req.body;
+    const note = noteDb.getNote(noteId);
+    if (!note) {
+      return res.status(404).json({ error: 'Note not found' });
+    }
+    // Update SRS fields if provided
+    if (nextReview !== undefined) note.nextReview = nextReview ? new Date(nextReview) : undefined;
+    if (interval !== undefined) note.interval = interval;
+    if (easiness !== undefined) note.easiness = easiness;
+    if (repetitions !== undefined) note.repetitions = repetitions;
+    if (lastReview !== undefined) note.lastReview = lastReview ? new Date(lastReview) : undefined;
+    if (lastPerformance !== undefined) note.lastPerformance = lastPerformance;
+    note.lastModified = new Date();
+    noteDb.saveNote(note);
+    res.json({ note });
+  } catch (error) {
+    console.error('Error updating note SRS fields:', error);
+    res.status(500).json({ error: 'Failed to update note SRS fields' });
   }
 });
 

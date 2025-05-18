@@ -11,7 +11,7 @@ export async function getAIResponse(
   docManager: DocumentManager
 ): Promise<string> {
   const response = await openai.chat.completions.create({
-    model: "gpt-4-turbo-preview",
+    model: "gpt4.1-mini",
     messages: [
       ...conversation,
       {

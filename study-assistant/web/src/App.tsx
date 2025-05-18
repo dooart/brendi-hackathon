@@ -27,7 +27,16 @@ The notes will be displayed in the chat with proper formatting and tags. You can
         throw new Error('Failed to fetch notes');
       }
       const data = await response.json();
-      setNotes(data.notes);
+      console.log('Raw notes from backend:', data.notes);
+      const parsedNotes = data.notes.map((note: any) => ({
+        ...note,
+        nextReview: note.nextReview ? new Date(note.nextReview) : undefined,
+        lastReview: note.lastReview ? new Date(note.lastReview) : undefined,
+        createdAt: new Date(note.createdAt),
+        lastModified: new Date(note.lastModified),
+      }));
+      console.log('Parsed notes:', parsedNotes);
+      setNotes(parsedNotes);
     } catch (error) {
       console.error('Error fetching notes:', error);
     }

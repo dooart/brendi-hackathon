@@ -38,7 +38,13 @@ export class NoteDatabase {
         created_at TEXT NOT NULL,
         last_modified TEXT NOT NULL,
         conversation_id TEXT NOT NULL,
-        message_index INTEGER NOT NULL
+        message_index INTEGER NOT NULL,
+        next_review TEXT,
+        interval INTEGER,
+        easiness REAL,
+        repetitions INTEGER,
+        last_review TEXT,
+        last_performance INTEGER
       )
     `);
   }
@@ -114,8 +120,9 @@ export class NoteDatabase {
     this.db.prepare(`
       INSERT OR REPLACE INTO notes (
         id, title, content, tags, related_notes,
-        created_at, last_modified, conversation_id, message_index
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        created_at, last_modified, conversation_id, message_index,
+        next_review, interval, easiness, repetitions, last_review, last_performance
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       note.id,
       note.title,
@@ -125,7 +132,13 @@ export class NoteDatabase {
       note.createdAt.toISOString(),
       note.lastModified.toISOString(),
       note.source.conversationId,
-      note.source.messageIndex
+      note.source.messageIndex,
+      note.nextReview ? note.nextReview.toISOString() : null,
+      note.interval ?? null,
+      note.easiness ?? null,
+      note.repetitions ?? null,
+      note.lastReview ? note.lastReview.toISOString() : null,
+      note.lastPerformance ?? null
     );
   }
 
@@ -147,7 +160,13 @@ export class NoteDatabase {
       source: {
         conversationId: note.conversation_id,
         messageIndex: note.message_index
-      }
+      },
+      nextReview: note.next_review ? new Date(note.next_review) : undefined,
+      interval: note.interval ?? undefined,
+      easiness: note.easiness ?? undefined,
+      repetitions: note.repetitions ?? undefined,
+      lastReview: note.last_review ? new Date(note.last_review) : undefined,
+      lastPerformance: note.last_performance ?? undefined
     };
   }
 
@@ -167,7 +186,13 @@ export class NoteDatabase {
       source: {
         conversationId: note.conversation_id,
         messageIndex: note.message_index
-      }
+      },
+      nextReview: note.next_review ? new Date(note.next_review) : undefined,
+      interval: note.interval ?? undefined,
+      easiness: note.easiness ?? undefined,
+      repetitions: note.repetitions ?? undefined,
+      lastReview: note.last_review ? new Date(note.last_review) : undefined,
+      lastPerformance: note.last_performance ?? undefined
     }));
   }
 
@@ -184,7 +209,13 @@ export class NoteDatabase {
       source: {
         conversationId: note.conversation_id,
         messageIndex: note.message_index
-      }
+      },
+      nextReview: note.next_review ? new Date(note.next_review) : undefined,
+      interval: note.interval ?? undefined,
+      easiness: note.easiness ?? undefined,
+      repetitions: note.repetitions ?? undefined,
+      lastReview: note.last_review ? new Date(note.last_review) : undefined,
+      lastPerformance: note.last_performance ?? undefined
     }));
   }
 
@@ -203,4 +234,10 @@ type NoteRow = {
   last_modified: string;
   conversation_id: string;
   message_index: number;
+  next_review?: string;
+  interval?: number;
+  easiness?: number;
+  repetitions?: number;
+  last_review?: string;
+  last_performance?: number;
 }; 
