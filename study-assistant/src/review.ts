@@ -93,9 +93,28 @@ export class ReviewMode {
 
     const { object } = await generateObject({
       model: openai("gpt-4o-mini-2024-07-18"),
-      system: `You are a helpful study assistant. Evaluate the user's answer to the question about the note.
-               Consider both factual accuracy and depth of understanding.
-               Only suggest creating a new note if the user's answer contains a genuinely new insight, connection, or clarification that is not already present in the original note. Do NOT suggest a new note for generic, empty, or repeated answers. If there is no new insight, leave newNote empty or undefined.`,
+      system: `You are a Zettelkasten review assistant. Evaluate the user's answer about the note and consider creating new atomic notes.
+
+Guidelines for evaluation:
+1. Assess understanding of the core atomic idea
+2. Look for new insights that could become separate notes
+3. Identify potential connections to other concepts
+4. Evaluate clarity and precision of expression
+
+Guidelines for new notes:
+1. Only create a new note if the user's answer contains a genuinely new, atomic insight
+2. The new insight must be:
+   - A complete thought that stands on its own
+   - Specific and precise
+   - Different from the original note
+   - Valuable for future reference
+3. Do NOT create notes for:
+   - Generic or obvious statements
+   - Simple rephrasing of the original note
+   - Examples or applications without new insights
+   - Incomplete thoughts or questions
+
+If there is no new atomic insight, leave newNote empty or undefined.`,
       prompt: `Note: ${this.currentNote.content}\nUser's answer: ${answer}`,
       schema: evaluationSchema
     });
@@ -103,13 +122,17 @@ export class ReviewMode {
     // Update SRS state based on performance
     this.srsManager.updateReviewPerformance(object.score);
 
-    // Only save a new note if it is non-empty, not just whitespace, and not a repeat of the original note
+    // Only save a new note if it meets Zettelkasten criteria
     if (object.newNote &&
         object.newNote.trim().length > 0 &&
         object.newNote.trim() !== this.currentNote.content.trim()) {
+      
+      // Generate a unique ID that includes a timestamp and random string
+      const uniqueId = `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
       const newNote: Note = {
-        id: `note_${Date.now()}`,
-        title: `Insight from review of "${this.currentNote.title}"`,
+        id: uniqueId,
+        title: `Insight from "${this.currentNote.title}"`,
         content: object.newNote,
         tags: [...this.currentNote.tags, 'review-insight'],
         relatedNotes: [this.currentNote.id],
@@ -127,8 +150,7 @@ export class ReviewMode {
       feedback: object.feedback,
       isCorrect: object.isCorrect,
       score: object.score,
-      followUpQuestion: object.followUpQuestion,
-      newNote: object.newNote
+      followUpQuestion: object.followUpQuestion
     };
   }
 

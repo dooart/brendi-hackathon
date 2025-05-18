@@ -5,6 +5,7 @@ import { ZettelkastenView } from './components/ZettelkastenView';
 import { ReviewPanel } from './components/ReviewPanel';
 import { Message, Note } from './types';
 import './App.css';
+import './styles/katex.css';
 import DocumentsPanel from './components/DocumentsPanel';
 
 function App() {

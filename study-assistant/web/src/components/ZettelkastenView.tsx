@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import ForceGraph2D from 'force-graph';
 import { Note } from '../types';
+import { MarkdownRenderer } from './MarkdownRenderer';
 
 interface ZettelkastenViewProps {
   notes: Note[];
@@ -180,7 +181,9 @@ export const ZettelkastenView: React.FC<ZettelkastenViewProps> = ({ notes, onNot
               title="Close"
             >×</button>
             <h2 style={{ color: '#7f53ff', fontWeight: 800, fontSize: 26, margin: 0 }}>{modalNote.title}</h2>
-            <div style={{ color: '#b0b8c1', fontSize: 17, marginBottom: 8, whiteSpace: 'pre-line', fontWeight: 500 }}>{modalNote.content}</div>
+            <div style={{ color: '#b0b8c1', fontSize: 17, marginBottom: 8, fontWeight: 500 }}>
+              <MarkdownRenderer content={modalNote.content} />
+            </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
               {modalNote.tags.map(tag => (
                 <span

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Note } from '../types';
+import { MarkdownRenderer } from './MarkdownRenderer';
 
 interface NotesPanelProps {
   notes: Note[];
@@ -177,7 +178,7 @@ const NotesPanel: React.FC<NotesPanelProps> = ({ notes, onNoteClick, onDeleteNot
                 </div>
                 <div style={{ height: 10 }} />
                 <div style={{ color: '#b0b8c1', fontSize: 15, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'pre-line', maxHeight: 60 }}>
-                  {note.content.length > 120 ? note.content.slice(0, 120) + '…' : note.content}
+                  <MarkdownRenderer content={note.content.length > 120 ? note.content.slice(0, 120) + '…' : note.content} />
                 </div>
               </div>
             ))
@@ -235,7 +236,9 @@ const NotesPanel: React.FC<NotesPanelProps> = ({ notes, onNoteClick, onDeleteNot
               title="Close"
             >×</button>
             <h2 style={{ color: '#7f53ff', fontWeight: 800, fontSize: 26, margin: 0 }}>{modalNote.title}</h2>
-            <div style={{ color: '#b0b8c1', fontSize: 17, marginBottom: 8, whiteSpace: 'pre-line', fontWeight: 500 }}>{modalNote.content}</div>
+            <div style={{ color: '#b0b8c1', fontSize: 17, marginBottom: 8, fontWeight: 500 }}>
+              <MarkdownRenderer content={modalNote.content} />
+            </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
               {modalNote.tags.map(tag => (
                 <span

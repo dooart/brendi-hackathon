@@ -1487,4 +1487,11 @@ textarea:focus {
     max-width: 98vw;
     padding: 18px 6vw 18px 6vw;
   }
+}
+
+/* Prevent vertical scrollbars inside chat bubbles and their children */
+.message,
+.message * {
+  overflow-y: visible !important;
+  max-height: none !important;
 } 

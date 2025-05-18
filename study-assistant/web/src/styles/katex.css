@@ -1,0 +1,61 @@
+/* KaTeX styles */
+.katex-display {
+  margin: 1em 0;
+  overflow-x: auto;
+  overflow-y: visible !important;
+  padding: 0.5em 0;
+  max-width: 100%;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.katex {
+  font-size: 1.1em;
+  text-rendering: auto;
+  max-width: 100%;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  overflow-y: visible !important;
+}
+
+.katex-display > .katex {
+  display: inline-block;
+  text-align: center;
+  max-width: 100%;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.katex-display > .katex > .katex-html {
+  display: block;
+  position: relative;
+  text-align: center;
+  max-width: 100%;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.katex-display > .katex > .katex-html > .tag {
+  position: absolute;
+  right: 0;
+}
+
+/* Inline math */
+.katex-inline {
+  padding: 0 0.2em;
+  max-width: 100%;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* Error styling */
+.katex-error {
+  color: #ff5c5c;
+  background: rgba(255, 92, 92, 0.1);
+  padding: 0.2em 0.4em;
+  border-radius: 4px;
+  font-family: monospace;
+  max-width: 100%;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+} 

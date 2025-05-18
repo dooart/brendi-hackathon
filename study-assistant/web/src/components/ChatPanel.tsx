@@ -1,6 +1,6 @@
 import React, { useState, useEffect, RefObject } from 'react';
 import { Message } from '../types';
-import ReactMarkdown from 'react-markdown';
+import { MarkdownRenderer } from './MarkdownRenderer';
 
 export interface ChatPanelProps {
   messages: Message[];
@@ -40,30 +40,48 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 
   return (
     <div className="chat-panel" style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-      <div className="messages" style={{ width: '100%', maxWidth: 600, margin: '0 auto', padding: '24px 0', flex: 1, overflowY: 'auto' }}>
+      <div className="messages" style={{ width: '100%', maxWidth: 800, margin: '0 auto', padding: '24px 0', overflowY: 'auto', overflowX: 'hidden' }}>
         {messages.map((message, index) => (
           <div
             key={index}
             className={`message ${message.role}`}
             style={{
-              maxWidth: '80%',
+              maxWidth: 700,
+              width: '95%',
               margin: message.role === 'user' ? '8px 0 8px auto' : '8px auto 8px 0',
               alignSelf: message.role === 'user' ? 'flex-end' : 'flex-start',
-              background: message.role === 'user' ? '#23272f' : '#353b48',
-              color: '#e6e6e6',
-              borderRadius: 18,
+              background: message.role === 'user'
+                ? 'linear-gradient(90deg, #4a9eff 0%, #7f53ff 100%)'
+                : '#353b48',
+              color: message.role === 'user' ? '#fff' : '#e6e6e6',
+              borderRadius: message.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
               padding: '18px 26px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.07)',
+              boxShadow: message.role === 'user'
+                ? '0 2px 8px #4a9eff44'
+                : '0 2px 8px rgba(0,0,0,0.07)',
               fontSize: 16,
               wordBreak: 'break-word',
+              overflowWrap: 'anywhere',
               textAlign: 'left',
+              position: 'relative',
+              overflowX: 'hidden',
             }}
           >
-            {message.role === 'assistant' ? (
-              <ReactMarkdown>{message.content}</ReactMarkdown>
-            ) : (
-              message.content
+            {/* User bubble pointer */}
+            {message.role === 'user' && (
+              <span style={{
+                position: 'absolute',
+                right: -12,
+                bottom: 12,
+                width: 0,
+                height: 0,
+                borderTop: '10px solid transparent',
+                borderBottom: '10px solid transparent',
+                borderLeft: '12px solid #7f53ff',
+                filter: 'drop-shadow(0 2px 4px #4a9eff44)'
+              }} />
             )}
+            <MarkdownRenderer content={message.content} />
           </div>
         ))}
         {isLoading && (

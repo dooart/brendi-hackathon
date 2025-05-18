@@ -28,23 +28,30 @@ interface NoteDetectionCriteria {
 }
 
 const NOTE_DETECTION_CRITERIA: NoteDetectionCriteria = {
-  minMessageLength: 80,
+  minMessageLength: 100,
   keywords: [
-    "key concept",
-    "principle",
-    "theory",
-    "definition",
-    "explanation",
-    "mechanism",
-    "system"
+    "atomic idea",
+    "core concept",
+    "key principle",
+    "fundamental",
+    "essential",
+    "critical insight",
+    "central concept",
+    "main argument",
+    "theoretical framework",
+    "methodological approach"
   ],
   concepts: [
-    "explanation",
-    "definition",
-    "principle",
-    "theory",
-    "mechanism",
-    "system"
+    "atomic idea",
+    "core concept",
+    "key principle",
+    "fundamental",
+    "essential",
+    "critical insight",
+    "central concept",
+    "main argument",
+    "theoretical framework",
+    "methodological approach"
   ]
 };
 
@@ -67,7 +74,16 @@ async function shouldCreateNote(
       messages: [
         {
           role: "system",
-          content: "You are a note detection system. Analyze if the following message contains important concepts, definitions, or explanations that would be valuable to save as a note. Respond with 'YES' or 'NO' only."
+          content: `You are a Zettelkasten note detection system. Analyze if the following message contains a single, atomic idea that would be valuable as a permanent note.
+
+Consider these strict criteria:
+1. Does it contain ONE clear, atomic idea?
+2. Is it a complete thought that stands on its own?
+3. Would it be valuable for future reference?
+4. Is it specific enough to be linked to other notes?
+5. Does it avoid being too general or obvious?
+
+Respond with 'YES' only if ALL criteria are met, otherwise 'NO'.`
         },
         {
           role: "user",
@@ -98,18 +114,24 @@ async function generateNote(
       messages: [
         {
           role: "system",
-          content: `You are a Zettelkasten note-taking assistant. Create atomic, concise notes following these principles:
-1. One note = One idea
+          content: `You are a Zettelkasten note-taking assistant. Create atomic, permanent notes following these strict principles:
+
+1. ONE note = ONE atomic idea
 2. Keep notes brief and focused (2-3 sentences maximum)
 3. Use your own words, not quotes
 4. Include clear connections to other concepts
 5. Use precise, technical language
+6. Make the note self-contained and understandable without context
+7. Focus on the core concept, not examples or applications
+8. Use clear, declarative statements
+9. Avoid generalizations and obvious statements
+10. Ensure the note can be linked to other notes
 
 Format the response as JSON with this structure:
 {
-  "title": "Short, specific title (3-5 words)",
+  "title": "Short, specific title (3-5 words) that captures the atomic idea",
   "content": "One clear, atomic idea. Maximum 2-3 sentences. Focus on the core concept.",
-  "tags": ["array", "of", "relevant", "tags", "for", "linking"]
+  "tags": ["array", "of", "relevant", "tags", "for", "linking", "and", "categorization"]
 }`
         },
         {
@@ -130,8 +152,10 @@ Format the response as JSON with this structure:
     const parsedNote = JSON.parse(noteContent);
     const now = new Date();
 
+    const uniqueId = `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
     return {
-      id: `note_${Date.now()}`,
+      id: uniqueId,
       title: parsedNote.title,
       content: parsedNote.content,
       tags: parsedNote.tags,
