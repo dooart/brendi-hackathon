@@ -77,7 +77,6 @@ The notes will be displayed in the chat with proper formatting and tags. You can
       }
 
       const data = await response.json();
-      console.log('OpenAI API response:', data);
       const newMessages: Message[] = [];
       const assistantMessage: Message = { role: 'assistant', content: data.message };
       newMessages.push(assistantMessage);

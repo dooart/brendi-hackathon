@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { NoteDatabase } from './database';
 
 export interface Note {
   id: string;
@@ -21,22 +22,14 @@ interface NoteDetectionCriteria {
 }
 
 const NOTE_DETECTION_CRITERIA: NoteDetectionCriteria = {
-  minMessageLength: 30,
+  minMessageLength: 80,
   keywords: [
     "key concept",
     "principle",
     "theory",
-    "method",
-    "process",
-    "technique",
     "definition",
     "explanation",
-    "connection",
-    "relationship",
-    "pattern",
     "mechanism",
-    "function",
-    "structure",
     "system"
   ],
   concepts: [
@@ -44,15 +37,7 @@ const NOTE_DETECTION_CRITERIA: NoteDetectionCriteria = {
     "definition",
     "principle",
     "theory",
-    "method",
-    "process",
-    "technique",
-    "connection",
-    "relationship",
-    "pattern",
     "mechanism",
-    "function",
-    "structure",
     "system"
   ]
 };
@@ -163,11 +148,30 @@ interface NoteDetectionSystem {
   stop: () => void;
 }
 
+function stringSimilarity(a: string, b: string): number {
+  a = a.toLowerCase();
+  b = b.toLowerCase();
+  if (a === b) return 1;
+  const aWords = new Set(a.split(/\W+/));
+  const bWords = new Set(b.split(/\W+/));
+  const intersection = new Set([...aWords].filter(x => bWords.has(x)));
+  return intersection.size / Math.max(aWords.size, bWords.size);
+}
+
+function jaccardSimilarity(a: string[], b: string[]): number {
+  const setA = new Set(a.map(s => s.toLowerCase()));
+  const setB = new Set(b.map(s => s.toLowerCase()));
+  const intersection = new Set([...setA].filter(x => setB.has(x)));
+  const union = new Set([...setA, ...setB]);
+  return intersection.size / union.size;
+}
+
 export function startNoteDetection(
   openai: OpenAI,
   onNoteCreated: (note: Note) => void
 ): NoteDetectionSystem {
   let isRunning = true;
+  const noteDb = new NoteDatabase();
 
   const process = async (
     conversation: { role: string; content: string }[],
@@ -179,7 +183,6 @@ export function startNoteDetection(
       const lastMessage = conversation[conversation.length - 1];
       if (lastMessage && lastMessage.role === "assistant") {
         const shouldCreate = await shouldCreateNote(openai, lastMessage);
-        
         if (shouldCreate) {
           const note = await generateNote(
             openai,
@@ -187,7 +190,17 @@ export function startNoteDetection(
             conversationId,
             conversation.length - 1
           );
-          onNoteCreated(note);
+          // Check for similar notes before saving
+          const allNotes = noteDb.getAllNotes();
+          const isDuplicate = allNotes.some(existing =>
+            stringSimilarity(existing.title, note.title) > 0.8 ||
+            jaccardSimilarity(existing.tags, note.tags) > 0.7
+          );
+          if (!isDuplicate) {
+            onNoteCreated(note);
+          } else {
+            console.log('Skipped duplicate/similar note:', note.title);
+          }
         }
       }
     } catch (error) {

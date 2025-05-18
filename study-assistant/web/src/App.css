@@ -111,7 +111,7 @@ body, .app {
 }
 
 .message {
-  max-width: 80%;
+  max-width: 520px;
   padding: 22px 28px;
   border-radius: 16px;
   line-height: 1.6;
