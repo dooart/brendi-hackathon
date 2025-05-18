@@ -19,6 +19,7 @@ The notes will be displayed in the chat with proper formatting and tags. You can
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
+  const [model, setModel] = useState<'openai' | 'local'>('openai');
 
   const fetchNotes = async () => {
     try {
@@ -65,31 +66,27 @@ The notes will be displayed in the chat with proper formatting and tags. You can
     fetchNotes();
   }, []);
 
-  const handleSendMessage = async (message: string) => {
+  const handleSendMessage = async (message: string, model: 'openai' | 'local') => {
     if (!message.trim()) return;
-
     setIsLoading(true);
     try {
       const userMessage: Message = { role: 'user', content: message };
       setMessages(prev => [...prev, userMessage]);
-
-      const response = await fetch('http://localhost:3001/api/chat', {
+      const endpoint = model === 'openai' ? '/api/chat' : '/api/chat-local';
+      const response = await fetch(`http://localhost:3001${endpoint}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ message }),
       });
-
       if (!response.ok) {
         throw new Error('Failed to get response');
       }
-
       const data = await response.json();
       const newMessages: Message[] = [];
       const assistantMessage: Message = { role: 'assistant', content: data.message };
       newMessages.push(assistantMessage);
-
       if (data.note) {
         const noteMessage: Message = {
           role: 'assistant',
@@ -98,7 +95,6 @@ The notes will be displayed in the chat with proper formatting and tags. You can
         newMessages.push(noteMessage);
         fetchNotes();
       }
-
       setMessages(prev => [...prev, ...newMessages]);
     } catch (error) {
       console.error('Error sending message:', error);
@@ -120,6 +116,29 @@ The notes will be displayed in the chat with proper formatting and tags. You can
     <div className="app">
       <div className="sidebar">
         <div className="logo">Study Assistant</div>
+        <div style={{ margin: '18px 0 24px 0', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6 }}>
+          <label htmlFor="model-select" style={{ fontWeight: 500, fontSize: 14, color: '#b0b8c1', marginBottom: 2 }}>Model</label>
+          <select
+            id="model-select"
+            value={model}
+            onChange={e => setModel(e.target.value as 'openai' | 'local')}
+            style={{
+              padding: '7px 14px',
+              borderRadius: 8,
+              background: '#23272f',
+              color: '#e6e6e6',
+              border: '1px solid #4a9eff33',
+              fontSize: 15,
+              fontWeight: 500,
+              outline: 'none',
+              width: '100%',
+              marginTop: 0
+            }}
+          >
+            <option value="openai">OpenAI (gpt4.1-mini)</option>
+            <option value="local">Local (Ollama)</option>
+          </select>
+        </div>
         <nav>
           <button
             className={activeTab === 'chat' ? 'active' : ''}
@@ -171,8 +190,9 @@ The notes will be displayed in the chat with proper formatting and tags. You can
           <ChatPanel
             messages={messages}
             isLoading={isLoading}
-            onSendMessage={handleSendMessage}
+            onSendMessage={msg => handleSendMessage(msg, model)}
             messagesEndRef={messagesEndRef}
+            model={model}
           />
         )}
         {activeTab === 'notes' && (
@@ -192,6 +212,7 @@ The notes will be displayed in the chat with proper formatting and tags. You can
           <ReviewPanel
             notes={notes}
             onNoteClick={handleNoteClick}
+            model={model}
           />
         )}
       </div>

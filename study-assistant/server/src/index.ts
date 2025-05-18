@@ -5,6 +5,7 @@ import { OpenAI } from 'openai';
 import { DocumentManager } from './documents';
 import { startNoteDetection, Note } from './notes';
 import { NoteDatabase } from './database';
+import fetch from 'node-fetch';
 
 dotenv.config();
 
@@ -80,6 +81,35 @@ app.post('/api/chat', async (req, res) => {
   } catch (error) {
     console.error('Error in chat endpoint:', error);
     res.status(500).json({ error: 'Failed to process chat message' });
+  }
+});
+
+app.post('/api/chat-local', async (req, res) => {
+  try {
+    const { message } = req.body;
+    if (!message) {
+      return res.status(400).json({ error: 'Message is required' });
+    }
+    // Send to Ollama local model
+    const ollamaRes = await fetch('http://localhost:11434/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'phi3:latest', // You can change to another local model if desired
+        messages: [
+          { role: 'system', content: 'You are a helpful study assistant. Format your responses using markdown for better readability. Use code blocks, bullet points, and text emphasis where appropriate.' },
+          { role: 'user', content: message }
+        ],
+        stream: false
+      })
+    });
+    const data = await ollamaRes.json();
+    // Ollama returns { message: { role, content }, ... }
+    const aiResponse = data.message?.content || data.message || '';
+    res.json({ message: aiResponse });
+  } catch (error) {
+    console.error('Error in chat-local endpoint:', error);
+    res.status(500).json({ error: 'Failed to process local chat message' });
   }
 });
 

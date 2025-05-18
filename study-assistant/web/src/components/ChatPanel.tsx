@@ -4,16 +4,18 @@ import ReactMarkdown from 'react-markdown';
 
 interface ChatPanelProps {
   messages: Message[];
-  onSendMessage: (message: string) => void;
+  onSendMessage: (message: string, model: 'openai' | 'local') => void;
   isLoading: boolean;
   messagesEndRef: RefObject<HTMLDivElement>;
+  model: 'openai' | 'local';
 }
 
 export const ChatPanel: React.FC<ChatPanelProps> = ({ 
   messages, 
   onSendMessage, 
   isLoading,
-  messagesEndRef 
+  messagesEndRef,
+  model
 }) => {
   const [input, setInput] = useState('');
 
@@ -28,7 +30,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (input.trim() && !isLoading) {
-      onSendMessage(input.trim());
+      onSendMessage(input.trim(), model);
       setInput('');
     }
   };

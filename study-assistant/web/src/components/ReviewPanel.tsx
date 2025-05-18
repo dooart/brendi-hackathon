@@ -6,9 +6,10 @@ import { marked } from 'marked';
 interface ReviewPanelProps {
   notes: Note[];
   onNoteClick: (note: Note) => void;
+  model?: 'openai' | 'local';
 }
 
-export const ReviewPanel: React.FC<ReviewPanelProps> = ({ notes, onNoteClick }) => {
+export const ReviewPanel: React.FC<ReviewPanelProps> = ({ notes, onNoteClick, model = 'openai' }) => {
   const [srsManager] = useState(() => new SRSManager());
   const [isLoading, setIsLoading] = useState(false);
   const [currentQuestion, setCurrentQuestion] = useState<string | null>(null);
@@ -63,7 +64,8 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ notes, onNoteClick }) 
     setIsLoading(true);
     try {
       // Generate a question based on the note content using LLM
-      const response = await fetch('http://localhost:3001/api/chat', {
+      const getEndpoint = () => model === 'openai' ? '/api/chat' : '/api/chat-local';
+      const response = await fetch(`http://localhost:3001${getEndpoint()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: `Generate a review question for the following note:\n\n${note.content}` }),
@@ -91,7 +93,8 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ notes, onNoteClick }) 
     setDisableActions(true);
     try {
       // Start a conversation with the LLM for personalized feedback
-      const response = await fetch('http://localhost:3001/api/chat', {
+      const getEndpoint = () => model === 'openai' ? '/api/chat' : '/api/chat-local';
+      const response = await fetch(`http://localhost:3001${getEndpoint()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: `Analyze the following answer for the question: ${currentQuestion}\n\nAnswer: ${userAnswer}\n\nProvide personalized feedback and be ready for further questions.` }),
@@ -129,7 +132,8 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ notes, onNoteClick }) 
     setIsChatLoading(true);
     setChatInput('');
     try {
-      const response = await fetch('http://localhost:3001/api/chat', {
+      const getEndpoint = () => model === 'openai' ? '/api/chat' : '/api/chat-local';
+      const response = await fetch(`http://localhost:3001${getEndpoint()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -211,70 +215,68 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ notes, onNoteClick }) 
       )}
       {showFeedback && (
         <div style={{ marginTop: 24 }}>
-          {isChatting && (
-            <div className="review-chat" style={{ background: '#f8fafc', borderRadius: 12, boxShadow: '0 2px 8px #e0e7ef', padding: 16, marginTop: 8, maxWidth: 520, marginLeft: 'auto', marginRight: 'auto' }}>
-              <div className="question" style={{ fontWeight: 600, fontSize: 17, marginBottom: 10, background: '#f8fafc', borderRadius: 8, padding: 10, border: '1px solid #e5e7eb', wordBreak: 'break-word', whiteSpace: 'pre-line', overflowWrap: 'break-word', maxWidth: '100%' }}
-                dangerouslySetInnerHTML={{ __html: marked(currentQuestion || '') }}
-              />
-              {feedback && (
-                <div className="feedback" style={{ marginBottom: 16, background: '#f1f5f9', borderRadius: 8, padding: 12, border: '1px solid #e0e7ef', wordBreak: 'break-word', whiteSpace: 'pre-line', overflowWrap: 'break-word', maxWidth: '100%' }}
-                  dangerouslySetInnerHTML={{ __html: marked(feedback) }}
+          <div className="review-chat" style={{ background: '#f8fafc', borderRadius: 12, boxShadow: '0 2px 8px #e0e7ef', padding: 16, marginTop: 8, maxWidth: 520, marginLeft: 'auto', marginRight: 'auto' }}>
+            <div className="question" style={{ fontWeight: 600, fontSize: 17, marginBottom: 10, background: '#f8fafc', borderRadius: 8, padding: 10, border: '1px solid #e5e7eb', wordBreak: 'break-word', whiteSpace: 'pre-line', overflowWrap: 'break-word', maxWidth: '100%' }}
+              dangerouslySetInnerHTML={{ __html: marked(currentQuestion || '') }}
+            />
+            <div style={{ marginBottom: 16 }}>
+              {chatHistory.map((msg, idx) => (
+                <div key={idx} className={`message ${msg.role}`} style={{
+                  alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                  background: msg.role === 'user' ? 'linear-gradient(90deg, #6366f1 0%, #818cf8 100%)' : '#f1f5f9',
+                  color: msg.role === 'user' ? '#fff' : '#222',
+                  borderRadius: 8,
+                  padding: '10px 14px',
+                  marginBottom: 6,
+                  maxWidth: '90%',
+                  wordBreak: 'break-word',
+                  whiteSpace: 'pre-line',
+                  overflowWrap: 'break-word',
+                  fontSize: 15
+                }}
+                  dangerouslySetInnerHTML={{ __html: marked(msg.content) }}
                 />
+              ))}
+              {isChatLoading && (
+                <div className="message assistant" style={{ background: '#f1f5f9', color: '#222', borderRadius: 8, padding: '10px 14px', marginBottom: 6, maxWidth: '90%' }}>
+                  <span className="typing-indicator">
+                    <span></span><span></span><span></span>
+                  </span>
+                </div>
               )}
-              <div className="chat-history" style={{ maxHeight: 220, overflowY: 'auto', marginBottom: 12 }}>
-                {chatHistory.map((msg, idx) => (
-                  <div key={idx} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start', marginBottom: 6 }}>
-                    <div style={{
-                      background: msg.role === 'user' ? 'linear-gradient(90deg, #6366f1 0%, #818cf8 100%)' : '#e0e7ef',
-                      color: msg.role === 'user' ? '#fff' : '#222',
-                      borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                      padding: '8px 14px',
-                      maxWidth: 340,
-                      fontSize: 15,
-                      boxShadow: '0 1px 2px #e0e7ef',
-                      wordBreak: 'break-word',
-                      whiteSpace: 'pre-line',
-                      overflowWrap: 'break-word',
-                    }}
-                      dangerouslySetInnerHTML={{ __html: marked(msg.content) }}
-                    />
-                  </div>
-                ))}
-                {isChatLoading && <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 6 }}><div style={{ background: '#e0e7ef', borderRadius: '16px 16px 16px 4px', padding: '8px 14px', maxWidth: 340, fontSize: 15 }}>...</div></div>}
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <input
-                  type="text"
-                  value={chatInput}
-                  onChange={e => setChatInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') handleSendChat(); }}
-                  placeholder="Ask a follow-up question..."
-                  style={{ flex: 1, borderRadius: 8, border: '1px solid #e0e7ef', padding: '8px 12px', fontSize: 15, background: '#fff' }}
-                  disabled={isChatLoading}
-                />
-                <button
-                  onClick={handleSendChat}
-                  disabled={!chatInput.trim() || isChatLoading}
-                  style={{
-                    background: 'linear-gradient(90deg, #6366f1 0%, #818cf8 100%)',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: 8,
-                    padding: '8px 18px',
-                    fontWeight: 600,
-                    fontSize: 15,
-                    cursor: !chatInput.trim() || isChatLoading ? 'not-allowed' : 'pointer',
-                    opacity: !chatInput.trim() || isChatLoading ? 0.6 : 1,
-                    transition: 'opacity 0.2s',
-                  }}
-                >Send</button>
-              </div>
-              <button
-                onClick={handleContinue}
-                style={{ marginTop: 18, background: '#f1f5f9', border: '1px solid #e0e7ef', borderRadius: 8, padding: '8px 18px', fontWeight: 500, fontSize: 15, color: '#222', cursor: 'pointer', boxShadow: '0 1px 2px #e0e7ef' }}
-              >Next Question</button>
             </div>
-          )}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                type="text"
+                value={chatInput}
+                onChange={e => setChatInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleSendChat(); }}
+                placeholder="Ask a follow-up question..."
+                style={{ flex: 1, borderRadius: 8, border: '1px solid #e0e7ef', padding: '8px 12px', fontSize: 15, background: '#fff' }}
+                disabled={isChatLoading}
+              />
+              <button
+                onClick={handleSendChat}
+                disabled={!chatInput.trim() || isChatLoading}
+                style={{
+                  background: 'linear-gradient(90deg, #6366f1 0%, #818cf8 100%)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 8,
+                  padding: '8px 18px',
+                  fontWeight: 600,
+                  fontSize: 15,
+                  cursor: !chatInput.trim() || isChatLoading ? 'not-allowed' : 'pointer',
+                  opacity: !chatInput.trim() || isChatLoading ? 0.6 : 1,
+                  transition: 'opacity 0.2s',
+                }}
+              >Send</button>
+            </div>
+            <button
+              onClick={handleContinue}
+              style={{ marginTop: 18, background: '#f1f5f9', border: '1px solid #e0e7ef', borderRadius: 8, padding: '8px 18px', fontWeight: 500, fontSize: 15, color: '#222', cursor: 'pointer', boxShadow: '0 1px 2px #e0e7ef' }}
+            >Next Question</button>
+          </div>
         </div>
       )}
       {!isReviewing && (
