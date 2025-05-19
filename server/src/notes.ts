@@ -243,6 +243,28 @@ function jaccardSimilarity(a: string[], b: string[]): number {
   return intersection.size / union.size;
 }
 
+// Utility function to normalize titles for comparison
+function normalizeTitle(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+// Utility function to check if a note is similar to any in a list, with logging
+function isSimilarNote(newNote: Note, existingNotes: Note[]): boolean {
+  const normNewTitle = normalizeTitle(newNote.title);
+  return existingNotes.some(existing => {
+    const normExistingTitle = normalizeTitle(existing.title);
+    const titleSim = stringSimilarity(normExistingTitle, normNewTitle);
+    const tagSim = jaccardSimilarity(existing.tags, newNote.tags)
+    if (titleSim > 0.85 || tagSim > 0.7) {
+      console.log(`[Duplicate Check] Considered duplicate (titleSim > 0.85 or tagSim > 0.7)`);
+      return true;
+    }
+    return false;
+  });
+}
+
+export { isSimilarNote };
+
 export function startNoteDetection(
   geminiModel: any,
   onNoteCreated: (note: Note) => void
@@ -281,16 +303,13 @@ export function startNoteDetection(
           // Check for similar notes before saving
           const allNotes = noteDb.getAllNotes();
           notes.forEach(note => {
-            const isDuplicate = allNotes.some(existing =>
-              stringSimilarity(existing.title, note.title) > 0.8 ||
-              jaccardSimilarity(existing.tags, note.tags) > 0.7
-            );
-            if (!isDuplicate) {
+            if (!isSimilarNote(note, allNotes)) {
               console.log('[Note Detection] Note is unique, saving:', {
                 title: note.title,
                 tags: note.tags
               });
               onNoteCreated(note);
+              allNotes.push(note); // Add to in-memory list to avoid near-duplicates in the same batch
             } else {
               console.log('[Note Detection] Skipped duplicate/similar note:', note.title);
             }

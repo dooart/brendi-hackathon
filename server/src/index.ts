@@ -14,7 +14,7 @@ import DocumentDatabase from './documentDatabase.js';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js';
 import { generateGeminiResponse, generateNoteWithGemini, geminiModel } from './gemini.js';
 import { generateOpenAIResponse } from './openai.js';
-import { shouldCreateNote } from './notes.js';
+import { shouldCreateNote, isSimilarNote } from './notes.js';
 import { generateLocalResponse } from './local.js';
 
 dotenv.config();
@@ -260,10 +260,14 @@ app.post('/api/note', async (req: Request, res: Response) => {
         'chat-' + Date.now(),
         0
       );
-      // Save the note to the database
-      if (note) {
+      // Save the note to the database only if not a duplicate
+      const allNotes = noteDb.getAllNotes();
+      if (!isSimilarNote(note, allNotes)) {
         noteDb.saveNote(note);
         console.log('Note saved to database:', note.title);
+      } else {
+        console.log('Skipped duplicate/similar note:', note.title);
+        note = null;
       }
     }
 
