@@ -141,6 +141,9 @@ Student's Answer: ${userAnswer}`,
       const data = await response.json();
       const feedback = data.response;
       setFeedback(feedback);
+      // Determine performance score based on feedback
+      const score = feedback.toLowerCase().includes('correct') ? 5 : 1;
+      srsManager.updateReviewPerformance(score);
       setChatHistory([
         { 
           role: 'system', 
