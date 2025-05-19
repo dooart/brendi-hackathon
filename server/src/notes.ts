@@ -58,7 +58,7 @@ const NOTE_DETECTION_CRITERIA: NoteDetectionCriteria = {
 export async function shouldCreateNote(
   geminiModel: any,
   message: { role: string; content: string }
-): Promise<boolean> {
+): Promise<false | { title: string; content: string; tags: string[] }> {
   console.log('[Note Detection] Checking if should create note for message:', {
     role: message.role,
     contentLength: message.content.length
@@ -79,30 +79,53 @@ export async function shouldCreateNote(
 
   if (hasKeywords) {
     console.log('[Note Detection] Found keywords, proceeding with note creation');
-    return true;
+    // We'll still use the LLM to generate the note content below
   }
 
   try {
-    console.log('[Note Detection] No keywords found, using AI to analyze message');
-    const prompt = `You are a Zettelkasten note detection system. Analyze if the following message contains a single, atomic idea that would be valuable as a permanent note.
+    console.log('[Note Detection] Using AI to analyze message and possibly generate note');
+    const prompt = `You are a Zettelkasten note detection and creation system.
 
-Consider these strict criteria:
-1. Does it contain ONE clear, atomic idea?
-2. Is it a complete thought that stands on its own?
-3. Would it be valuable for future reference?
-4. Is it specific enough to be linked to other notes?
-5. Does it avoid being too general or obvious?
+1. Carefully read the following message.
+2. If the message contains any important, non-trivial, atomic information that would be valuable as a permanent note, write a Zettelkasten-style note using the information provided. The note should be:
+   - Atomic (one idea)
+   - Self-contained
+   - Valuable for long-term reference
+   - Linkable to other notes
+   - Written in your own words
+   - Brief (2-3 sentences)
+   - With a short, specific title and relevant tags
 
-Respond with 'YES' only if ALL criteria are met, otherwise 'NO'.
+Format your response as valid JSON:
+{
+  "title": "...",
+  "content": "...",
+  "tags": ["...", "..."]
+}
+
+3. If there is NO such information, respond with "NO" (just the string, no explanation).
 
 Message to analyze:
 ${message.content}`;
 
     const result = await geminiModel.generateContent(prompt);
     const response = await result.response;
-    const decision = response.text().toLowerCase().trim();
-    console.log('[Note Detection] AI decision:', decision);
-    return decision === "yes";
+    const text = response.text().trim();
+    console.log('[Note Detection] AI response:', text);
+    if (text.toLowerCase() === 'no') {
+      return false;
+    }
+    // Try to parse JSON
+    try {
+      const noteJson = JSON.parse(text.replace(/```json|```/g, '').trim());
+      if (noteJson && noteJson.title && noteJson.content && Array.isArray(noteJson.tags)) {
+        return noteJson;
+      }
+      return false;
+    } catch (err) {
+      console.error('[Note Detection] Could not parse note JSON:', err);
+      return false;
+    }
   } catch (error) {
     console.error("[Note Detection] Error in note detection:", error);
     return false;
@@ -114,46 +137,66 @@ async function generateNote(
   message: { role: string; content: string },
   conversationId: string,
   messageIndex: number
-): Promise<Note> {
+): Promise<Note[]> {
   try {
-    const prompt = `You are a Zettelkasten note-taking assistant. Create atomic, permanent notes following these strict principles:
+    const prompt = `You are a Zettelkasten note-taking assistant. Your job is to extract the most important atomic ideas from the following message and write each as a separate, permanent note.
 
-1. ONE note = ONE atomic idea
-2. Keep notes brief and focused (2-3 sentences maximum)
-3. Use your own words, not quotes
-4. Include clear connections to other concepts
-5. Use precise, technical language
-6. Make the note self-contained and understandable without context
-7. Focus on the core concept, not examples or applications
-8. Use clear, declarative statements
-9. Avoid generalizations and obvious statements
-10. Ensure the note can be linked to other notes
+- If the message contains multiple concepts, equations, or steps, create a separate note for each one.
+- Each note must be ONE idea only, self-contained, and as short as possible (1 sentence if possible, never more than 2).
+- Do NOT summarize the whole topic or list steps in a single note.
+- Each note must stand alone and be valuable for long-term reference.
+- Use Markdown for formatting (bold, italic, lists, code, quotes).
+- Use LaTeX for any mathematical expressions (inline math: $...$, block math: $$...$$).
 
-Format the response as JSON with this structure:
+**Example:**
+
+Message:
+"The Kalman Filter has a prediction step and an update step. The prediction step uses the model to estimate the next state. The update step incorporates new measurements."
+
+Bad (not atomic):
 {
-  "title": "Short, specific title (3-5 words) that captures the atomic idea",
-  "content": "One clear, atomic idea. Maximum 2-3 sentences. Focus on the core concept.",
-  "tags": ["array", "of", "relevant", "tags", "for", "linking", "and", "categorization"]
+  "title": "Kalman Filter Steps",
+  "content": "The Kalman Filter has a prediction step and an update step. The prediction step uses the model to estimate the next state. The update step incorporates new measurements.",
+  "tags": ["kalman filter", "steps"]
 }
 
-Message to create note from:
+Good (atomic, split):
+[
+  {
+    "title": "Kalman Filter: Prediction Step",
+    "content": "The prediction step uses the model to estimate the next state.",
+    "tags": ["kalman filter", "prediction"]
+  },
+  {
+    "title": "Kalman Filter: Update Step",
+    "content": "The update step incorporates new measurements to correct the state estimate.",
+    "tags": ["kalman filter", "update"]
+  }
+]
+
+Format your response as a JSON array of notes as above. If there are no atomic ideas, respond with "NO".
+
+Message to analyze:
 ${message.content}`;
 
     const result = await geminiModel.generateContent(prompt);
     const response = await result.response;
     const noteContent = response.text();
-    
-    if (!noteContent) {
-      throw new Error("Failed to generate note content");
+    if (!noteContent || noteContent.trim().toLowerCase() === 'no') {
+      throw new Error("No atomic notes found");
     }
-
-    const parsedNote = JSON.parse(noteContent);
+    let parsedNotes;
+    try {
+      parsedNotes = JSON.parse(noteContent.replace(/```json|```/g, '').trim());
+    } catch (e) {
+      throw new Error("Failed to parse notes JSON");
+    }
+    if (!Array.isArray(parsedNotes)) {
+      parsedNotes = [parsedNotes];
+    }
     const now = new Date();
-
-    const uniqueId = `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-    return {
-      id: uniqueId,
+    return parsedNotes.map((parsedNote: any, idx: number) => ({
+      id: `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${idx}`,
       title: parsedNote.title,
       content: parsedNote.content,
       tags: parsedNote.tags,
@@ -170,7 +213,7 @@ ${message.content}`;
       repetitions: undefined,
       lastReview: undefined,
       lastPerformance: undefined
-    };
+    }));
   } catch (error) {
     console.error("Error generating note:", error);
     throw error;
@@ -227,9 +270,9 @@ export function startNoteDetection(
       if (lastMessage && lastMessage.role === "assistant") {
         console.log('[Note Detection] Found assistant message, checking for note creation');
         const shouldCreate = await shouldCreateNote(geminiModel, lastMessage);
-        if (shouldCreate) {
+        if (shouldCreate && typeof shouldCreate === 'object') {
           console.log('[Note Detection] Should create note, generating...');
-          const note = await generateNote(
+          const notes = await generateNote(
             geminiModel,
             lastMessage,
             conversationId,
@@ -237,19 +280,21 @@ export function startNoteDetection(
           );
           // Check for similar notes before saving
           const allNotes = noteDb.getAllNotes();
-          const isDuplicate = allNotes.some(existing =>
-            stringSimilarity(existing.title, note.title) > 0.8 ||
-            jaccardSimilarity(existing.tags, note.tags) > 0.7
-          );
-          if (!isDuplicate) {
-            console.log('[Note Detection] Note is unique, saving:', {
-              title: note.title,
-              tags: note.tags
-            });
-            onNoteCreated(note);
-          } else {
-            console.log('[Note Detection] Skipped duplicate/similar note:', note.title);
-          }
+          notes.forEach(note => {
+            const isDuplicate = allNotes.some(existing =>
+              stringSimilarity(existing.title, note.title) > 0.8 ||
+              jaccardSimilarity(existing.tags, note.tags) > 0.7
+            );
+            if (!isDuplicate) {
+              console.log('[Note Detection] Note is unique, saving:', {
+                title: note.title,
+                tags: note.tags
+              });
+              onNoteCreated(note);
+            } else {
+              console.log('[Note Detection] Skipped duplicate/similar note:', note.title);
+            }
+          });
         } else {
           console.log('[Note Detection] No note creation needed');
         }
