@@ -142,7 +142,9 @@ async function generateNote(
     const prompt = `You are a Zettelkasten note-taking assistant. Your job is to extract the most important atomic ideas from the following message and write each as a separate, permanent note.
 
 - If the message contains multiple concepts, equations, or steps, create a separate note for each one.
-- Each note must be ONE idea only, self-contained, and as short as possible (1 sentence if possible, never more than 2).
+- Each note must be ONE idea only, self-contained, and as short as possible.
+- Each note should be a single, short sentence if possible, and NEVER more than two sentences.
+- Do NOT include any extra explanation, context, or repetition—be as brief as possible while still being clear and atomic.
 - Do NOT summarize the whole topic or list steps in a single note.
 - Each note must stand alone and be valuable for long-term reference.
 - Use Markdown for formatting (bold, italic, lists, code, quotes).
@@ -161,20 +163,22 @@ Bad (not atomic):
 }
 
 Good (atomic, split):
-[
-  {
-    "title": "Kalman Filter: Prediction Step",
-    "content": "The prediction step uses the model to estimate the next state.",
-    "tags": ["kalman filter", "prediction"]
-  },
-  {
-    "title": "Kalman Filter: Update Step",
-    "content": "The update step incorporates new measurements to correct the state estimate.",
-    "tags": ["kalman filter", "update"]
-  }
-]
+{
+  "notes": [
+    {
+      "title": "Kalman Filter: Prediction Step",
+      "content": "The prediction step uses the model to estimate the next state.",
+      "tags": ["kalman filter", "prediction"]
+    },
+    {
+      "title": "Kalman Filter: Update Step",
+      "content": "The update step incorporates new measurements to correct the state estimate.",
+      "tags": ["kalman filter", "update"]
+    }
+  ]
+}
 
-Format your response as a JSON array of notes as above. If there are no atomic ideas, respond with "NO".
+Format your response as a JSON object with a 'notes' field (an array of notes) as above. If there are no atomic ideas, respond with "NO".
 
 Message to analyze:
 ${message.content}`;
@@ -187,7 +191,8 @@ ${message.content}`;
     }
     let parsedNotes;
     try {
-      parsedNotes = JSON.parse(noteContent.replace(/```json|```/g, '').trim());
+      const parsed = JSON.parse(noteContent.replace(/```json|```/g, '').trim());
+      parsedNotes = parsed.notes;
     } catch (e) {
       throw new Error("Failed to parse notes JSON");
     }

@@ -99,14 +99,14 @@ The notes will be displayed in the chat with proper formatting and tags. You can
       });
       if (noteRes.ok) {
         const noteData = await noteRes.json();
-        if (noteData.note) {
-          setNotes(prev => [...prev, noteData.note]);
+        if (noteData.notes && Array.isArray(noteData.notes) && noteData.notes.length > 0) {
+          setNotes(prev => [...prev, ...noteData.notes]);
           setMessages(prev => [
             ...prev,
-            {
+            ...noteData.notes.map((note: any) => ({
               role: 'assistant',
-              content: `📝 **Note created:**\n\n**${noteData.note.title}**\n\n${noteData.note.content}\n\n*Tags: ${noteData.note.tags.join(', ')}*`
-            }
+              content: `📝 **Note created:**\n\n**${note.title}**\n\n${note.content}\n\n*Tags: ${note.tags.join(', ')}*`
+            }))
           ]);
         }
       }

@@ -253,25 +253,29 @@ app.post('/api/note', async (req: Request, res: Response) => {
     }
 
     const shouldCreate = await shouldCreateNote(geminiModel, { role: 'assistant', content });
-    let note = null;
+    let notes: Note[] = [];
     if (shouldCreate) {
-      note = await generateNoteWithGemini(
+      const generatedNotes = await generateNoteWithGemini(
         { role: 'assistant', content },
         'chat-' + Date.now(),
         0
       );
-      // Save the note to the database only if not a duplicate
+      // Save each unique note
       const allNotes = noteDb.getAllNotes();
-      if (!isSimilarNote(note, allNotes)) {
-        noteDb.saveNote(note);
-        console.log('Note saved to database:', note.title);
-      } else {
-        console.log('Skipped duplicate/similar note:', note.title);
-        note = null;
-      }
+      notes = generatedNotes.filter(note => {
+        if (!isSimilarNote(note, allNotes)) {
+          noteDb.saveNote(note);
+          allNotes.push(note); // Avoid near-duplicates in this batch
+          console.log('Note saved to database:', note.title);
+          return true;
+        } else {
+          console.log('Skipped duplicate/similar note:', note.title);
+          return false;
+        }
+      });
     }
 
-    res.json({ note });
+    res.json({ notes });
   } catch (error) {
     console.error('Error in note endpoint:', error);
     res.status(500).json({ error: 'Failed to generate note' });
