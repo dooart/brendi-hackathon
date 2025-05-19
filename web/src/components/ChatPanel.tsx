@@ -5,8 +5,8 @@ import { MarkdownRenderer } from './MarkdownRenderer';
 export interface ChatPanelProps {
   messages: Message[];
   isLoading: boolean;
-  onSendMessage: (message: string, model: 'gemini' | 'openai' | 'local', useRag: boolean) => void;
-  messagesEndRef: React.RefObject<HTMLDivElement>;
+  onSendMessage: (msg: string, mdl: 'gemini' | 'openai' | 'local', useRag: boolean) => Promise<void>;
+  messagesEndRef: RefObject<HTMLDivElement>;
   model: 'gemini' | 'openai' | 'local';
   embeddingProvider: 'openai' | 'ollama';
 }
@@ -22,21 +22,18 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   const [input, setInput] = useState('');
   const [useRag, setUseRag] = useState(false);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const handleSendMessage = async () => {
+    if (!input.trim()) return;
+    const messageToSend = input;
+    setInput(''); // Clear input immediately
+    await onSendMessage(messageToSend, model, useRag);
   };
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (input.trim() && !isLoading) {
-      onSendMessage(input, model, useRag);
-      setInput('');
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  };
+  }, [messages, messagesEndRef]);
 
   return (
     <div className="chat-panel" style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -108,7 +105,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           Use Document Retrieval (RAG)
         </span>
       </div>
-      <form onSubmit={handleSubmit} className="input-form" style={{ width: '100%', maxWidth: 600, margin: '0 auto', display: 'flex', gap: 8, padding: '0 0 18px 0' }}>
+      <form onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }} className="input-form" style={{ width: '100%', maxWidth: 600, margin: '0 auto', display: 'flex', gap: 8, padding: '0 0 18px 0' }}>
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -118,7 +115,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           onKeyDown={e => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
-              handleSubmit(e);
+              handleSendMessage();
             }
             // Shift+Enter inserts newline by default
           }}

@@ -67,50 +67,52 @@ The notes will be displayed in the chat with proper formatting and tags. You can
     fetchNotes();
   }, []);
 
-  const handleSendMessage = async (message: string, model: 'gemini' | 'openai' | 'local', useRag: boolean) => {
-    if (!message.trim()) return;
+  const handleSendMessage = async (message: string, model: 'gemini' | 'openai' | 'local', useRag: boolean = false) => {
     setIsLoading(true);
     try {
-      const userMessage: Message = { role: 'user', content: message };
-      setMessages(prev => [...prev, userMessage]);
-      const endpoint = model === 'openai' ? '/api/chat' : '/api/chat-local';
-      
-      const requestBody = { 
-        message,
-        history: [...messages, userMessage].map(m => ({ role: m.role, content: m.content })),
-        useRag,
-      };
-      
-      const response = await fetch(`http://localhost:3001${endpoint}`, {
+      setMessages(prev => [...prev, { role: 'user', content: message }]);
+
+      const response = await fetch('http://localhost:3001/api/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message,
+          history: messages,
+          model,
+          useRag
+        })
       });
+
       if (!response.ok) {
         throw new Error('Failed to get response');
       }
+
       const data = await response.json();
-      const newMessages: Message[] = [];
-      const assistantMessage: Message = { role: 'assistant', content: data.message };
-      newMessages.push(assistantMessage);
-      if (data.note) {
-        const noteMessage: Message = {
-          role: 'assistant',
-          content: `📝 **New Note Created!**\n\n**${data.note.title}**\n${data.note.content}\n\nTags: ${data.note.tags.join(', ')}`
-        };
-        newMessages.push(noteMessage);
-        fetchNotes();
+      const aiResponse = data.response;
+      setMessages(prev => [...prev, { role: 'assistant', content: aiResponse }]);
+
+      // Call /api/note with the assistant's response
+      const noteRes = await fetch('http://localhost:3001/api/note', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: aiResponse })
+      });
+      if (noteRes.ok) {
+        const noteData = await noteRes.json();
+        if (noteData.note) {
+          setNotes(prev => [...prev, noteData.note]);
+          setMessages(prev => [
+            ...prev,
+            {
+              role: 'assistant',
+              content: `📝 **Note created:**\n\n**${noteData.note.title}**\n\n${noteData.note.content}\n\n*Tags: ${noteData.note.tags.join(', ')}*`
+            }
+          ]);
+        }
       }
-      setMessages(prev => [...prev, ...newMessages]);
     } catch (error) {
-      console.error('Error sending message:', error);
-      const errorMessage: Message = {
-        role: 'assistant',
-        content: 'Sorry, I encountered an error. Please try again.',
-      };
-      setMessages(prev => [...prev, errorMessage]);
+      console.error('[App] Error sending message:', error);
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, something went wrong.' }]);
     } finally {
       setIsLoading(false);
     }

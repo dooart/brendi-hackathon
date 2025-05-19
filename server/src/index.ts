@@ -1,19 +1,21 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { OpenAI } from 'openai';
-import { DocumentManager } from './documents';
-import { startNoteDetection, Note } from './notes';
-import { NoteDatabase } from './database';
+import { DocumentManager } from './documents.js';
+import { startNoteDetection, Note } from './notes.js';
+import { NoteDatabase } from './database.js';
 import fetch from 'node-fetch';
-import multer from 'multer';
+import multer, { Multer } from 'multer';
 import pdfParse from 'pdf-parse';
 import fs from 'fs';
 import path from 'path';
-import type { Request } from 'express';
-import DocumentDatabase from './documentDatabase';
+import DocumentDatabase from './documentDatabase.js';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js';
-import { generateGeminiResponse, generateNoteWithGemini } from './gemini';
+import { generateGeminiResponse, generateNoteWithGemini, geminiModel } from './gemini.js';
+import { generateOpenAIResponse } from './openai.js';
+import { shouldCreateNote } from './notes.js';
+import { generateLocalResponse } from './local.js';
 
 dotenv.config();
 
@@ -50,7 +52,7 @@ if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 const upload = multer({ dest: uploadDir });
 
 // Initialize note detection system with Gemini
-const noteDetection = startNoteDetection(openai, (note: Note) => {
+const noteDetection = startNoteDetection(geminiModel, (note: Note) => {
   lastCreatedNote = note;
   noteDb.saveNote(note);
   console.log('Note created:', note.title);
@@ -135,6 +137,17 @@ function logRagUsage(documentId: number, chunkIndexes: RAGChunk[], response: str
   }
 }
 
+interface OllamaEmbeddingResponse {
+  embedding: number[];
+}
+
+interface OllamaChatResponse {
+  message?: {
+    content: string;
+  };
+  content?: string;
+}
+
 // Helper to get embedding from Ollama
 async function getOllamaEmbedding(text: string): Promise<number[]> {
   const res = await fetch('http://localhost:11434/api/embeddings', {
@@ -147,7 +160,7 @@ async function getOllamaEmbedding(text: string): Promise<number[]> {
     console.error('Ollama embedding error:', errorText);
     throw new Error('Ollama embedding failed');
   }
-  const data = await res.json();
+  const data = await res.json() as OllamaEmbeddingResponse;
   if (!data.embedding) throw new Error('No embedding in Ollama response');
   return data.embedding;
 }
@@ -178,47 +191,59 @@ function averageEmbeddings(embeddings: number[][]): number[] {
   return sum.map(x => x / embeddings.length);
 }
 
-app.post('/api/chat', async (req, res) => {
+// Chat endpoint: only returns the AI response
+app.post('/api/chat', async (req: Request, res: Response) => {
   try {
-    const { message, history, useRag } = req.body;
-    if (!message && !history) {
-      return res.status(400).json({ error: 'Message or history is required' });
+    const { message, history, model = 'gemini', useRag = false } = req.body;
+
+    if (!message) {
+      return res.status(400).json({ error: 'Message is required' });
     }
 
-    let messages;
-    if (history && Array.isArray(history) && history.length > 0) {
-      const last = history[history.length - 1];
-      if (!last || last.role !== 'user' || last.content !== message) {
-        messages = [...history, { role: 'user', content: message }];
-      } else {
-        messages = history;
-      }
+    let response: string;
+    if (model === 'gemini') {
+      response = await generateGeminiResponse(message, history);
+    } else if (model === 'openai') {
+      response = await generateOpenAIResponse(message, history);
+    } else if (model === 'local') {
+      response = await generateLocalResponse(message, history);
     } else {
-      messages = [
-        { role: 'system', content: 'You are a helpful study assistant. Format your responses using markdown for better readability. Use code blocks, bullet points, and text emphasis where appropriate.' },
-        { role: 'user', content: message }
-      ];
+      return res.status(400).json({ error: 'Invalid model specified' });
     }
 
-    // Use Gemini as the default model
-    const aiResponse = await generateGeminiResponse(message, messages);
-    
-    // Process the response for note creation
-    if (aiResponse) {
-      noteDetection.process(messages, 'default-conversation');
-    }
-
-    res.json({ 
-      message: aiResponse,
-      note: lastCreatedNote
-    });
+    res.json({ response });
   } catch (error) {
     console.error('Error in chat endpoint:', error);
-    res.status(500).json({ error: 'Failed to process chat message' });
+    res.status(500).json({ error: 'Failed to generate response' });
   }
 });
 
-app.post('/api/chat-local', async (req, res) => {
+// Note endpoint: returns a note for a given assistant response
+app.post('/api/note', async (req: Request, res: Response) => {
+  try {
+    const { content } = req.body;
+    if (!content) {
+      return res.status(400).json({ error: 'Content is required' });
+    }
+
+    const shouldCreate = await shouldCreateNote(geminiModel, { role: 'assistant', content });
+    let note = null;
+    if (shouldCreate) {
+      note = await generateNoteWithGemini(
+        { role: 'assistant', content },
+        'chat-' + Date.now(),
+        0
+      );
+    }
+
+    res.json({ note });
+  } catch (error) {
+    console.error('Error in note endpoint:', error);
+    res.status(500).json({ error: 'Failed to generate note' });
+  }
+});
+
+app.post('/api/chat-local', async (req: Request, res: Response) => {
   try {
     const { message, history } = req.body;
     if (!message && !history) {
@@ -248,9 +273,9 @@ app.post('/api/chat-local', async (req, res) => {
         stream: false
       })
     });
-    const data = await ollamaRes.json();
+    const data = await ollamaRes.json() as OllamaChatResponse;
     // Ollama returns { message: { role, content }, ... }
-    const aiResponse = data.message?.content || data.message || '';
+    const aiResponse = data.message?.content || data.content || '';
     res.json({ message: aiResponse });
   } catch (error) {
     console.error('Error in chat-local endpoint:', error);
@@ -258,7 +283,7 @@ app.post('/api/chat-local', async (req, res) => {
   }
 });
 
-app.get('/api/notes', (req, res) => {
+app.get('/api/notes', (req: Request, res: Response) => {
   try {
     const notes = noteDb.getAllNotes();
     res.json({ notes });
@@ -268,7 +293,7 @@ app.get('/api/notes', (req, res) => {
   }
 });
 
-app.delete('/api/notes/:id', (req, res) => {
+app.delete('/api/notes/:id', (req: Request, res: Response) => {
   try {
     const noteId = req.params.id;
     noteDb.deleteNote(noteId);
@@ -279,7 +304,7 @@ app.delete('/api/notes/:id', (req, res) => {
   }
 });
 
-app.patch('/api/notes/:id', (req, res) => {
+app.patch('/api/notes/:id', (req: Request, res: Response) => {
   try {
     const noteId = req.params.id;
     const {
@@ -311,18 +336,17 @@ app.patch('/api/notes/:id', (req, res) => {
 });
 
 // Upload PDF, extract text, embed, save
-app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
+app.post('/api/documents/upload', upload.single('file'), async (req: Request & { file?: Express.Multer.File }, res: Response) => {
   const uploadId = generateUploadId();
   uploadStatus[uploadId] = { status: 'Uploading file...', progress: 0 };
   try {
-    const reqWithFile = req as Request & { file?: Express.Multer.File };
     const embeddingProvider = req.body.embeddingProvider === 'ollama' ? 'ollama' : 'openai';
-    if (!reqWithFile.file) {
+    if (!req.file) {
       uploadStatus[uploadId] = { status: 'No file uploaded', progress: 0, error: 'No file uploaded' };
       return res.status(400).json({ error: 'No file uploaded', uploadId });
     }
     uploadStatus[uploadId] = { status: 'Extracting text...', progress: 10 };
-    const { originalname, path: filePath } = reqWithFile.file;
+    const { originalname, path: filePath } = req.file;
     const dataBuffer = fs.readFileSync(filePath);
     const title = originalname.replace(/\.pdf$/i, '');
     // Use pdfjsLib to stream pages

@@ -63,7 +63,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ notes, onNoteClick, mo
     setIsLoading(true);
     try {
       // Generate a question based on the note content using LLM
-      const getEndpoint = () => model === 'openai' ? '/api/chat' : '/api/chat-local';
+      const getEndpoint = () => model === 'gemini' ? '/api/chat' : model === 'openai' ? '/api/chat' : '/api/chat-local';
       const response = await fetch(`http://localhost:3001${getEndpoint()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -74,6 +74,11 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ notes, onNoteClick, mo
 3. NOT include the answer or hints
 4. Be appropriate for the content level
 5. Encourage critical thinking
+6. Use Markdown for formatting (e.g., **bold**, *italic*, lists, etc.)
+7. Use LaTeX for mathematical expressions:
+   - Inline math: $...$
+   - Block math: $$...$$
+8. Do NOT use HTML tags
 
 Note to review:
 ${note.content}` 
@@ -113,11 +118,24 @@ ${note.content}`
 5. Be encouraging and supportive
 6. Be ready for follow-up questions
 7. Maintain context of the conversation
-8. IMPORTANT: When outputting mathematical expressions, always use $...$ for inline math and $$...$$ for block math, following standard Markdown+LaTeX conventions, instead of simple markdown. Do NOT use [ ... ], ( ... ), or \\( ... \\) for math. For example: Inline: $x = 2y + 1$. Block: $$\\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}$$. Always ensure all math is properly delimited for Markdown rendering.\n\nOriginal Note Content:\n${note?.content}\n\nQuestion: ${currentQuestion}\n\nStudent's Answer: ${userAnswer}\n\nPlease provide personalized feedback and be ready for further questions.`,
+8. Use Markdown for formatting (e.g., **bold**, *italic*, lists, etc.)
+9. Use LaTeX for mathematical expressions:
+   - Inline math: $...$
+   - Block math: $$...$$
+10. Do NOT use HTML tags
+
+Original Note Content:
+${note?.content}
+
+Question: ${currentQuestion}
+
+Student's Answer: ${userAnswer}
+
+Please provide personalized feedback and be ready for further questions.`,
         history: [
           { 
             role: 'system', 
-            content: `You are a helpful study assistant providing personalized feedback. You are discussing the following note:\n\n${note?.content}\n\nKeep this context in mind throughout the conversation.\n\nIMPORTANT: When outputting mathematical expressions, always use $...$ for inline math and $$...$$ for block math, following standard Markdown+LaTeX conventions. Do NOT use [ ... ], ( ... ), or \\( ... \\) for math. For example: Inline: $x = 2y + 1$. Block: $$\\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}$$. Always ensure all math is properly delimited for Markdown rendering.` 
+            content: `You are a helpful study assistant providing personalized feedback. You are discussing the following note:\n\n${note?.content}\n\nKeep this context in mind throughout the conversation.\n\nUse Markdown for formatting and LaTeX for mathematical expressions. Do NOT use HTML tags.` 
           },
           { role: 'assistant', content: `Here is the question based on the note:\n\n${currentQuestion}` },
           { role: 'user', content: userAnswer }
@@ -126,7 +144,7 @@ ${note.content}`
       
       console.log('Submitting answer - Request to model:', JSON.stringify(requestBody, null, 2));
       
-      const getEndpoint = () => model === 'openai' ? '/api/chat' : '/api/chat-local';
+      const getEndpoint = () => model === 'gemini' ? '/api/chat' : model === 'openai' ? '/api/chat' : '/api/chat-local';
       const response = await fetch(`http://localhost:3001${getEndpoint()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -182,7 +200,15 @@ ${note.content}`
 5. Check for understanding
 6. Be encouraging and supportive
 7. Maintain context of the conversation
-8. IMPORTANT: When outputting mathematical expressions, always use $...$ for inline math and $$...$$ for block math, following standard Markdown+LaTeX conventions. Do NOT use [ ... ], ( ... ), or \\( ... \\) for math. For example: Inline: $x = 2y + 1$. Block: $$\\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}$$. Always ensure all math is properly delimited for Markdown rendering.\n\nCurrent question: ${currentQuestion}\n\n${chatInput}`,
+8. Use Markdown for formatting (e.g., **bold**, *italic*, lists, etc.)
+9. Use LaTeX for mathematical expressions:
+   - Inline math: $...$
+   - Block math: $$...$$
+10. Do NOT use HTML tags
+
+Current question: ${currentQuestion}
+
+${chatInput}`,
         history: newHistory.map(m => ({ 
           role: m.role as 'user' | 'assistant' | 'system', 
           content: m.content 
@@ -191,7 +217,7 @@ ${note.content}`
       
       console.log('Sending chat - Request to model:', JSON.stringify(requestBody, null, 2));
       
-      const getEndpoint = () => model === 'openai' ? '/api/chat' : '/api/chat-local';
+      const getEndpoint = () => model === 'gemini' ? '/api/chat' : model === 'openai' ? '/api/chat' : '/api/chat-local';
       const response = await fetch(`http://localhost:3001${getEndpoint()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

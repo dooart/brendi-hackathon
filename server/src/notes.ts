@@ -1,4 +1,4 @@
-import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NoteDatabase } from './database';
 
 export interface Note {
@@ -55,26 +55,36 @@ const NOTE_DETECTION_CRITERIA: NoteDetectionCriteria = {
   ]
 };
 
-async function shouldCreateNote(
-  openai: OpenAI,
+export async function shouldCreateNote(
+  geminiModel: any,
   message: { role: string; content: string }
 ): Promise<boolean> {
-  if (message.role !== 'assistant') return false;
-  if (message.content.length < NOTE_DETECTION_CRITERIA.minMessageLength) return false;
+  console.log('[Note Detection] Checking if should create note for message:', {
+    role: message.role,
+    contentLength: message.content.length
+  });
+
+  if (message.role !== 'assistant') {
+    console.log('[Note Detection] Skipping - not an assistant message');
+    return false;
+  }
+  if (message.content.length < NOTE_DETECTION_CRITERIA.minMessageLength) {
+    console.log('[Note Detection] Skipping - message too short');
+    return false;
+  }
 
   const hasKeywords = NOTE_DETECTION_CRITERIA.keywords.some(keyword =>
     message.content.toLowerCase().includes(keyword.toLowerCase())
   );
 
-  if (hasKeywords) return true;
+  if (hasKeywords) {
+    console.log('[Note Detection] Found keywords, proceeding with note creation');
+    return true;
+  }
 
   try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4.1-mini",
-      messages: [
-        {
-          role: "system",
-          content: `You are a Zettelkasten note detection system. Analyze if the following message contains a single, atomic idea that would be valuable as a permanent note.
+    console.log('[Note Detection] No keywords found, using AI to analyze message');
+    const prompt = `You are a Zettelkasten note detection system. Analyze if the following message contains a single, atomic idea that would be valuable as a permanent note.
 
 Consider these strict criteria:
 1. Does it contain ONE clear, atomic idea?
@@ -83,38 +93,30 @@ Consider these strict criteria:
 4. Is it specific enough to be linked to other notes?
 5. Does it avoid being too general or obvious?
 
-Respond with 'YES' only if ALL criteria are met, otherwise 'NO'.`
-        },
-        {
-          role: "user",
-          content: message.content
-        }
-      ],
-      temperature: 0.3,
-      max_tokens: 10
-    });
+Respond with 'YES' only if ALL criteria are met, otherwise 'NO'.
 
-    const decision = response.choices[0].message.content?.toLowerCase().trim();
+Message to analyze:
+${message.content}`;
+
+    const result = await geminiModel.generateContent(prompt);
+    const response = await result.response;
+    const decision = response.text().toLowerCase().trim();
+    console.log('[Note Detection] AI decision:', decision);
     return decision === "yes";
   } catch (error) {
-    console.error("Error in note detection:", error);
+    console.error("[Note Detection] Error in note detection:", error);
     return false;
   }
 }
 
 async function generateNote(
-  openai: OpenAI,
+  geminiModel: any,
   message: { role: string; content: string },
   conversationId: string,
   messageIndex: number
 ): Promise<Note> {
   try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4.1-mini",
-      messages: [
-        {
-          role: "system",
-          content: `You are a Zettelkasten note-taking assistant. Create atomic, permanent notes following these strict principles:
+    const prompt = `You are a Zettelkasten note-taking assistant. Create atomic, permanent notes following these strict principles:
 
 1. ONE note = ONE atomic idea
 2. Keep notes brief and focused (2-3 sentences maximum)
@@ -132,19 +134,15 @@ Format the response as JSON with this structure:
   "title": "Short, specific title (3-5 words) that captures the atomic idea",
   "content": "One clear, atomic idea. Maximum 2-3 sentences. Focus on the core concept.",
   "tags": ["array", "of", "relevant", "tags", "for", "linking", "and", "categorization"]
-}`
-        },
-        {
-          role: "user",
-          content: message.content
-        }
-      ],
-      temperature: 0.7,
-      max_tokens: 300,
-      response_format: { type: "json_object" }
-    });
+}
 
-    const noteContent = response.choices[0].message.content;
+Message to create note from:
+${message.content}`;
+
+    const result = await geminiModel.generateContent(prompt);
+    const response = await result.response;
+    const noteContent = response.text();
+    
     if (!noteContent) {
       throw new Error("Failed to generate note content");
     }
@@ -203,9 +201,10 @@ function jaccardSimilarity(a: string[], b: string[]): number {
 }
 
 export function startNoteDetection(
-  openai: OpenAI,
+  geminiModel: any,
   onNoteCreated: (note: Note) => void
 ): NoteDetectionSystem {
+  console.log('[Note Detection] Starting note detection system');
   let isRunning = true;
   const noteDb = new NoteDatabase();
 
@@ -213,15 +212,25 @@ export function startNoteDetection(
     conversation: { role: string; content: string }[],
     conversationId: string
   ) => {
-    if (!isRunning) return;
+    if (!isRunning) {
+      console.log('[Note Detection] System stopped, skipping processing');
+      return;
+    }
 
     try {
+      console.log('[Note Detection] Processing conversation:', {
+        conversationId,
+        messageCount: conversation.length
+      });
+
       const lastMessage = conversation[conversation.length - 1];
       if (lastMessage && lastMessage.role === "assistant") {
-        const shouldCreate = await shouldCreateNote(openai, lastMessage);
+        console.log('[Note Detection] Found assistant message, checking for note creation');
+        const shouldCreate = await shouldCreateNote(geminiModel, lastMessage);
         if (shouldCreate) {
+          console.log('[Note Detection] Should create note, generating...');
           const note = await generateNote(
-            openai,
+            geminiModel,
             lastMessage,
             conversationId,
             conversation.length - 1
@@ -233,20 +242,29 @@ export function startNoteDetection(
             jaccardSimilarity(existing.tags, note.tags) > 0.7
           );
           if (!isDuplicate) {
+            console.log('[Note Detection] Note is unique, saving:', {
+              title: note.title,
+              tags: note.tags
+            });
             onNoteCreated(note);
           } else {
-            console.log('Skipped duplicate/similar note:', note.title);
+            console.log('[Note Detection] Skipped duplicate/similar note:', note.title);
           }
+        } else {
+          console.log('[Note Detection] No note creation needed');
         }
+      } else {
+        console.log('[Note Detection] Last message is not from assistant, skipping');
       }
     } catch (error) {
-      console.error("Error in note detection process:", error);
+      console.error("[Note Detection] Error in note detection process:", error);
     }
   };
 
   return {
     process,
     stop: () => {
+      console.log('[Note Detection] Stopping note detection system');
       isRunning = false;
     }
   };
