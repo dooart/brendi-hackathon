@@ -4,23 +4,23 @@ import { MarkdownRenderer } from './MarkdownRenderer';
 
 export interface ChatPanelProps {
   messages: Message[];
-  onSendMessage: (msg: string, model: 'openai' | 'local', useRag: boolean) => void;
   isLoading: boolean;
+  onSendMessage: (message: string, model: 'gemini' | 'openai' | 'local', useRag: boolean) => void;
   messagesEndRef: React.RefObject<HTMLDivElement>;
-  model: 'openai' | 'local';
+  model: 'gemini' | 'openai' | 'local';
   embeddingProvider: 'openai' | 'ollama';
 }
 
-export const ChatPanel: React.FC<ChatPanelProps> = ({ 
-  messages, 
-  onSendMessage, 
+export const ChatPanel: React.FC<ChatPanelProps> = ({
+  messages,
   isLoading,
+  onSendMessage,
   messagesEndRef,
   model,
   embeddingProvider
 }) => {
   const [input, setInput] = useState('');
-  const [useRag, setUseRag] = useState(true);
+  const [useRag, setUseRag] = useState(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -33,7 +33,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (input.trim() && !isLoading) {
-      onSendMessage(input.trim(), model, useRag);
+      onSendMessage(input, model, useRag);
       setInput('');
     }
   };
@@ -44,7 +44,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         {messages.map((message, index) => (
           <div
             key={index}
-            className={`message ${message.role}`}
+            className={`message ${message.role === 'assistant' ? 'assistant' : 'user'}`}
             style={{
               maxWidth: 700,
               width: '95%',
@@ -100,7 +100,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           <input
             type="checkbox"
             checked={useRag}
-            onChange={e => setUseRag(e.target.checked)}
+            onChange={(e) => setUseRag(e.target.checked)}
           />
           <span className="toggle-slider"></span>
         </label>

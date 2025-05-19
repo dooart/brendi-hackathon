@@ -13,6 +13,7 @@ import path from 'path';
 import type { Request } from 'express';
 import DocumentDatabase from './documentDatabase';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js';
+import { generateGeminiResponse, generateNoteWithGemini } from './gemini';
 
 dotenv.config();
 
@@ -48,7 +49,7 @@ const uploadDir = path.join(process.cwd(), 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 const upload = multer({ dest: uploadDir });
 
-// Initialize note detection system
+// Initialize note detection system with Gemini
 const noteDetection = startNoteDetection(openai, (note: Note) => {
   lastCreatedNote = note;
   noteDb.saveNote(note);
@@ -179,118 +180,38 @@ function averageEmbeddings(embeddings: number[][]): number[] {
 
 app.post('/api/chat', async (req, res) => {
   try {
-    const { message, history, useRag, embeddingProvider } = req.body;
+    const { message, history, useRag } = req.body;
     if (!message && !history) {
       return res.status(400).json({ error: 'Message or history is required' });
     }
-    const provider = embeddingProvider === 'ollama' ? 'ollama' : 'openai';
 
-    let ragContext = '';
-    let usedRagChunks: { document_id: number; chunk_index: number; chunk_text: string }[] = [];
-    if (useRag) {
-      // Generate embedding for the query
-      const queryEmbedding = await getEmbedding(message.slice(0, 8000), provider);
-      // Get all chunks and their embeddings
-      const chunks = documentDb.getAllChunks();
-      console.log(`[RAG] Found ${chunks.length} total chunks in database`);
-      
-      const scored = chunks.map(chunk => ({
-        ...chunk,
-        score: cosineSimilarity(queryEmbedding, chunk.embedding)
-      }));
-      scored.sort((a, b) => b.score - a.score);
-      
-      // Lower the similarity threshold to 0.1 and take top 5 chunks
-      const topChunks = scored.slice(0, 5).filter(d => d.score > 0.1);
-      console.log(`[RAG] Found ${topChunks.length} relevant chunks with scores:`, topChunks.map(c => c.score));
-      
-      if (topChunks.length > 0) {
-        ragContext = topChunks.map(chunk => {
-          const meta = documentDb.getChunkWithDocMeta(chunk.id);
-          return meta ? `Source: ${meta.title} (${meta.originalname})\n${chunk.chunk_text}` : chunk.chunk_text;
-        }).join('\n---\n');
-        // Track which document and chunk indexes were used
-        usedRagChunks = topChunks.map(chunk => ({
-          document_id: chunk.document_id,
-          chunk_index: chunk.chunk_index,
-          chunk_text: chunk.chunk_text
-        }));
-        console.log(`[RAG] Using chunks from documents:`, [...new Set(usedRagChunks.map(c => c.document_id))]);
+    let messages;
+    if (history && Array.isArray(history) && history.length > 0) {
+      const last = history[history.length - 1];
+      if (!last || last.role !== 'user' || last.content !== message) {
+        messages = [...history, { role: 'user', content: message }];
       } else {
-        console.log('[RAG] No relevant chunks found above similarity threshold');
+        messages = history;
       }
     } else {
-      console.log('[RAG] RAG is disabled for this request');
-    }
-
-    // Use history if provided, otherwise fallback to old behavior
-    const messages = history && Array.isArray(history) && history.length > 0
-      ? history
-      : [
-          {
-            role: "system",
-            content: "You are a helpful study assistant. Format your responses using markdown for better readability. Use code blocks, bullet points, and text emphasis where appropriate."
-          },
-          {
-            role: "user",
-            content: message
-          }
-        ];
-
-    // Inject RAG context as a system message if present
-    let finalMessages = messages;
-    if (ragContext) {
-      finalMessages = [
-        { role: 'system', content: `You have access to the following documents for context. When using information from these documents, ALWAYS cite the document title and any available metadata in your answer. Make it clear to the user which information comes from which document.\n\n${ragContext}` },
-        ...messages
+      messages = [
+        { role: 'system', content: 'You are a helpful study assistant. Format your responses using markdown for better readability. Use code blocks, bullet points, and text emphasis where appropriate.' },
+        { role: 'user', content: message }
       ];
     }
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4.1-mini",
-      messages: finalMessages,
-      temperature: 0.7,
-      max_tokens: 1500
+    // Use Gemini as the default model
+    const aiResponse = await generateGeminiResponse(message, messages);
+    
+    // Process the response for note creation
+    if (aiResponse) {
+      noteDetection.process(messages, 'default-conversation');
+    }
+
+    res.json({ 
+      message: aiResponse,
+      note: lastCreatedNote
     });
-
-    const aiResponse = response.choices[0].message.content;
-    if (!aiResponse) {
-      throw new Error('No response from OpenAI');
-    }
-
-    // Log RAG usage if any
-    if (usedRagChunks.length > 0) {
-      // Group by document_id
-      const byDoc: { [docId: number]: RAGChunk[] } = {};
-      usedRagChunks.forEach(c => {
-        if (!byDoc[c.document_id]) byDoc[c.document_id] = [];
-        byDoc[c.document_id].push({ chunk_index: c.chunk_index, chunk_text: c.chunk_text });
-      });
-      Object.entries(byDoc).forEach(([docId, chunks]) => {
-        logRagUsage(Number(docId), chunks, aiResponse, Date.now());
-      });
-    }
-
-    // Process the response for note detection
-    await noteDetection.process(
-      [
-        { role: 'user', content: message },
-        { role: 'assistant', content: aiResponse }
-      ],
-      Date.now().toString()
-    );
-
-    // Send response with note if one was created
-    const responseData: { message: string; note?: Note } = {
-      message: aiResponse
-    };
-
-    if (lastCreatedNote) {
-      responseData.note = lastCreatedNote;
-      lastCreatedNote = null;
-    }
-
-    res.json(responseData);
   } catch (error) {
     console.error('Error in chat endpoint:', error);
     res.status(500).json({ error: 'Failed to process chat message' });

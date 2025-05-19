@@ -7,10 +7,10 @@ import { MarkdownRenderer } from './MarkdownRenderer';
 interface ReviewPanelProps {
   notes: Note[];
   onNoteClick: (note: Note) => void;
-  model?: 'openai' | 'local';
+  model: 'gemini' | 'openai' | 'local';
 }
 
-export const ReviewPanel: React.FC<ReviewPanelProps> = ({ notes, onNoteClick, model = 'openai' }) => {
+export const ReviewPanel: React.FC<ReviewPanelProps> = ({ notes, onNoteClick, model }) => {
   const [srsManager] = useState(() => new SRSManager());
   const [isLoading, setIsLoading] = useState(false);
   const [currentQuestion, setCurrentQuestion] = useState<string | null>(null);
