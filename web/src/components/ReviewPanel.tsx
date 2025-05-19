@@ -28,11 +28,36 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ notes, onNoteClick, mo
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [disableActions, setDisableActions] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     srsManager.initializeFromNotes(notes);
     setStats(srsManager.getReviewStats());
   }, [notes, srsManager]);
+
+  const updateNoteInDatabase = async (noteId: string, srsState: any) => {
+    try {
+      setError(null);
+      const response = await fetch(`http://localhost:3001/api/notes/${noteId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nextReview: srsState.nextReview,
+          interval: srsState.interval,
+          easiness: srsState.easiness,
+          repetitions: srsState.repetitions,
+          lastReview: srsState.lastReview,
+          lastPerformance: srsState.lastPerformance
+        })
+      });
+      if (!response.ok) {
+        throw new Error('Failed to update note in database');
+      }
+    } catch (error) {
+      setError('Failed to update note in database. Review progress may not be saved.');
+      console.error('Database update error:', error);
+    }
+  };
 
   const startReview = async () => {
     const session = srsManager.startReviewSession(notes);
@@ -42,6 +67,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ notes, onNoteClick, mo
     }
     setIsReviewing(true);
     setFeedback(null);
+    setError(null);
     await generateQuestion();
   };
 
@@ -62,7 +88,6 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ notes, onNoteClick, mo
 
     setIsLoading(true);
     try {
-      // Generate a question based on the note content using LLM
       const getEndpoint = () => model === 'gemini' ? '/api/chat' : model === 'openai' ? '/api/chat' : '/api/chat-local';
       const response = await fetch(`http://localhost:3001${getEndpoint()}`, {
         method: 'POST',
@@ -78,7 +103,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ notes, onNoteClick, mo
 
 Note:
 ${note.content}`,
-          history: [] // Add empty history array
+          history: []
         }),
       });
 
@@ -93,6 +118,7 @@ ${note.content}`,
     } catch (error) {
       console.error('Error generating question:', error);
       setFeedback('Failed to generate question. Please try again.');
+      setError('Failed to generate question. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -102,14 +128,15 @@ ${note.content}`,
     if (!userAnswer.trim()) return;
     setIsLoading(true);
     setDisableActions(true);
+    setError(null);
     try {
       const currentNote = srsManager.getCurrentNote();
       const note = notes.find(n => n.id === currentNote?.noteId);
       
       const requestBody = { 
         message: `You are a study assistant. Review the student's answer to the flashcard question below. Your feedback should:
+- Start with "CORRECT:" or "INCORRECT:" followed by your feedback
 - Be brief and to the point
-- Confirm if the answer is correct or not
 - If incorrect, state the correct answer concisely
 - Avoid unnecessary explanation
 - Use Markdown and LaTeX as needed
@@ -141,9 +168,16 @@ Student's Answer: ${userAnswer}`,
       const data = await response.json();
       const feedback = data.response;
       setFeedback(feedback);
-      // Determine performance score based on feedback
-      const score = feedback.toLowerCase().includes('correct') ? 5 : 1;
-      srsManager.updateReviewPerformance(score);
+      
+      // Improved scoring based on explicit feedback format
+      const score = feedback.toLowerCase().startsWith('correct:') ? 5 : 1;
+      const newState = srsManager.updateReviewPerformance(score);
+      
+      // Update database with new SRS state
+      if (newState && currentNote) {
+        await updateNoteInDatabase(currentNote.noteId, newState);
+      }
+
       setChatHistory([
         { 
           role: 'system', 
@@ -156,7 +190,9 @@ Student's Answer: ${userAnswer}`,
       setIsChatting(true);
       setShowFeedback(true);
     } catch (error) {
+      console.error('Error in handleSubmit:', error);
       setFeedback('Failed to analyze answer. Please try again.');
+      setError('Failed to analyze answer. Please try again.');
       setShowFeedback(true);
     } finally {
       setIsLoading(false);
@@ -325,6 +361,20 @@ ${chatInput}`,
         alignItems: 'center',
         gap: 28,
       }}>
+        {error && (
+          <div style={{
+            width: '100%',
+            background: '#ff5c5c22',
+            color: '#ff5c5c',
+            borderRadius: 12,
+            padding: '12px 16px',
+            fontSize: 14,
+            fontWeight: 500,
+            marginBottom: -8,
+          }}>
+            {error}
+          </div>
+        )}
         {/* Header and Progress */}
         <div style={{ width: '100%', marginBottom: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>

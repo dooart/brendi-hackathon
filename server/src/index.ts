@@ -354,10 +354,26 @@ app.patch('/api/notes/:id', (req: Request, res: Response) => {
       lastReview,
       lastPerformance
     } = req.body;
+
+    // Validate input
+    if (interval !== undefined && (typeof interval !== 'number' || interval < 0)) {
+      return res.status(400).json({ error: 'Invalid interval value' });
+    }
+    if (easiness !== undefined && (typeof easiness !== 'number' || easiness < 1.3)) {
+      return res.status(400).json({ error: 'Invalid easiness value' });
+    }
+    if (repetitions !== undefined && (typeof repetitions !== 'number' || repetitions < 0)) {
+      return res.status(400).json({ error: 'Invalid repetitions value' });
+    }
+    if (lastPerformance !== undefined && (typeof lastPerformance !== 'number' || lastPerformance < 0 || lastPerformance > 5)) {
+      return res.status(400).json({ error: 'Invalid performance value' });
+    }
+
     const note = noteDb.getNote(noteId);
     if (!note) {
       return res.status(404).json({ error: 'Note not found' });
     }
+
     // Update SRS fields if provided
     if (nextReview !== undefined) note.nextReview = nextReview ? new Date(nextReview) : undefined;
     if (interval !== undefined) note.interval = interval;
@@ -365,8 +381,20 @@ app.patch('/api/notes/:id', (req: Request, res: Response) => {
     if (repetitions !== undefined) note.repetitions = repetitions;
     if (lastReview !== undefined) note.lastReview = lastReview ? new Date(lastReview) : undefined;
     if (lastPerformance !== undefined) note.lastPerformance = lastPerformance;
+    
     note.lastModified = new Date();
     noteDb.saveNote(note);
+
+    console.log('Updated note SRS fields:', {
+      id: noteId,
+      nextReview: note.nextReview,
+      interval: note.interval,
+      easiness: note.easiness,
+      repetitions: note.repetitions,
+      lastReview: note.lastReview,
+      lastPerformance: note.lastPerformance
+    });
+
     res.json({ note });
   } catch (error) {
     console.error('Error updating note SRS fields:', error);
