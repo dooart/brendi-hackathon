@@ -260,6 +260,11 @@ app.post('/api/note', async (req: Request, res: Response) => {
         'chat-' + Date.now(),
         0
       );
+      // Save the note to the database
+      if (note) {
+        noteDb.saveNote(note);
+        console.log('Note saved to database:', note.title);
+      }
     }
 
     res.json({ note });

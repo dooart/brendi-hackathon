@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import dotenv from 'dotenv';
+import { Note } from './notes';
 
 dotenv.config();
 
@@ -21,12 +22,12 @@ const geminiModel = genAI.getGenerativeModel({
 
 export async function generateGeminiResponse(
   message: string,
-  history: { role: string; content: string }[],
+  history: { role: string; content: string }[] = [],
   context?: string
 ): Promise<string> {
   try {
     // Filter out system messages and ensure first message is from user
-    const filteredHistory = history.filter(msg => msg.role !== 'system');
+    const filteredHistory = (history || []).filter(msg => msg.role !== 'system');
     if (filteredHistory.length === 0 || filteredHistory[0].role !== 'user') {
       filteredHistory.unshift({ role: 'user', content: message });
     }
@@ -37,10 +38,12 @@ export async function generateGeminiResponse(
     }
 
     const chat = geminiModel.startChat({
-      history: filteredHistory.map(msg => ({
-        role: msg.role === 'assistant' ? 'model' : msg.role,
-        parts: [{ text: msg.content }]
-      }))
+      history: filteredHistory
+        .filter(msg => msg.content && msg.content.trim() !== '')
+        .map(msg => ({
+          role: msg.role === 'assistant' ? 'model' : msg.role,
+          parts: [{ text: msg.content }]
+        }))
     });
 
     const result = await chat.sendMessage(prompt);
@@ -56,11 +59,7 @@ export async function generateNoteWithGemini(
   message: { role: string; content: string },
   conversationId: string,
   messageIndex: number
-): Promise<{
-  title: string;
-  content: string;
-  tags: string[];
-}> {
+): Promise<Note> {
   try {
     const prompt = `Extract a note from the following assistant response. Respond ONLY with a valid JSON object, no explanations, no markdown, no code blocks. The JSON should have the following structure: { "title": string, "content": string, "tags": string[] }\n\nAssistant response:\n${message.content}`;
 
@@ -73,10 +72,27 @@ export async function generateNoteWithGemini(
       throw new Error("Failed to generate note content");
     }
 
+    const now = new Date();
+    const uniqueId = `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
     return {
+      id: uniqueId,
       title: noteJson.title,
       content: noteJson.content,
-      tags: noteJson.tags
+      tags: noteJson.tags,
+      relatedNotes: [],
+      createdAt: now,
+      lastModified: now,
+      source: {
+        conversationId,
+        messageIndex
+      },
+      nextReview: undefined,
+      interval: undefined,
+      easiness: undefined,
+      repetitions: undefined,
+      lastReview: undefined,
+      lastPerformance: undefined
     };
   } catch (error) {
     console.error('[Gemini] Error generating note:', error);

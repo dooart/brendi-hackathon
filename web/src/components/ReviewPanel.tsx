@@ -74,14 +74,25 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ notes, onNoteClick, mo
 3. NOT include the answer or hints
 4. Be appropriate for the content level
 5. Encourage critical thinking
-6. Use Markdown for formatting (e.g., **bold**, *italic*, lists, etc.)
+6. Use Markdown for formatting:
+   - **bold** for emphasis
+   - *italic* for secondary emphasis
+   - \`code\` for technical terms
+   - Lists with - or 1. 2. 3.
+   - > for important quotes
 7. Use LaTeX for mathematical expressions:
-   - Inline math: $...$
-   - Block math: $$...$$
+   - Inline math: $...$ (e.g., $E = mc^2$)
+   - Block math: $$...$$ (e.g., $$\\frac{d}{dx}f(x) = \\lim_{h \\to 0}\\frac{f(x+h) - f(x)}{h}$$)
+   - Use \\frac for fractions
+   - Use \\sum for summations
+   - Use \\int for integrals
+   - Use \\lim for limits
+   - Use subscripts with _ and superscripts with ^
 8. Do NOT use HTML tags
 
 Note to review:
-${note.content}` 
+${note.content}`,
+          history: [] // Add empty history array
         }),
       });
 
@@ -90,7 +101,7 @@ ${note.content}`
       }
 
       const data = await response.json();
-      const question = data.message;
+      const question = data.response;
       setCurrentQuestion(question);
       setUserAnswer('');
     } catch (error) {
@@ -118,10 +129,20 @@ ${note.content}`
 5. Be encouraging and supportive
 6. Be ready for follow-up questions
 7. Maintain context of the conversation
-8. Use Markdown for formatting (e.g., **bold**, *italic*, lists, etc.)
+8. Use Markdown for formatting:
+   - **bold** for emphasis
+   - *italic* for secondary emphasis
+   - \`code\` for technical terms
+   - Lists with - or 1. 2. 3.
+   - > for important quotes
 9. Use LaTeX for mathematical expressions:
-   - Inline math: $...$
-   - Block math: $$...$$
+   - Inline math: $...$ (e.g., $E = mc^2$)
+   - Block math: $$...$$ (e.g., $$\\frac{d}{dx}f(x) = \\lim_{h \\to 0}\\frac{f(x+h) - f(x)}{h}$$)
+   - Use \\frac for fractions
+   - Use \\sum for summations
+   - Use \\int for integrals
+   - Use \\lim for limits
+   - Use subscripts with _ and superscripts with ^
 10. Do NOT use HTML tags
 
 Original Note Content:
@@ -141,9 +162,7 @@ Please provide personalized feedback and be ready for further questions.`,
           { role: 'user', content: userAnswer }
         ]
       };
-      
-      console.log('Submitting answer - Request to model:', JSON.stringify(requestBody, null, 2));
-      
+            
       const getEndpoint = () => model === 'gemini' ? '/api/chat' : model === 'openai' ? '/api/chat' : '/api/chat-local';
       const response = await fetch(`http://localhost:3001${getEndpoint()}`, {
         method: 'POST',
@@ -154,7 +173,7 @@ Please provide personalized feedback and be ready for further questions.`,
         throw new Error('Failed to analyze answer');
       }
       const data = await response.json();
-      const feedback = data.message;
+      const feedback = data.response;
       setFeedback(feedback);
       setChatHistory([
         { 
@@ -200,10 +219,20 @@ Please provide personalized feedback and be ready for further questions.`,
 5. Check for understanding
 6. Be encouraging and supportive
 7. Maintain context of the conversation
-8. Use Markdown for formatting (e.g., **bold**, *italic*, lists, etc.)
+8. Use Markdown for formatting:
+   - **bold** for emphasis
+   - *italic* for secondary emphasis
+   - \`code\` for technical terms
+   - Lists with - or 1. 2. 3.
+   - > for important quotes
 9. Use LaTeX for mathematical expressions:
-   - Inline math: $...$
-   - Block math: $$...$$
+   - Inline math: $...$ (e.g., $E = mc^2$)
+   - Block math: $$...$$ (e.g., $$\\frac{d}{dx}f(x) = \\lim_{h \\to 0}\\frac{f(x+h) - f(x)}{h}$$)
+   - Use \\frac for fractions
+   - Use \\sum for summations
+   - Use \\int for integrals
+   - Use \\lim for limits
+   - Use subscripts with _ and superscripts with ^
 10. Do NOT use HTML tags
 
 Current question: ${currentQuestion}
@@ -214,9 +243,7 @@ ${chatInput}`,
           content: m.content 
         }))
       };
-      
-      console.log('Sending chat - Request to model:', JSON.stringify(requestBody, null, 2));
-      
+            
       const getEndpoint = () => model === 'gemini' ? '/api/chat' : model === 'openai' ? '/api/chat' : '/api/chat-local';
       const response = await fetch(`http://localhost:3001${getEndpoint()}`, {
         method: 'POST',
@@ -225,7 +252,7 @@ ${chatInput}`,
       });
       if (!response.ok) throw new Error('Failed to get response');
       const data = await response.json();
-      setChatHistory([...newHistory, { role: 'assistant' as const, content: data.message }]);
+      setChatHistory([...newHistory, { role: 'assistant' as const, content: data.response }]);
     } catch (err) {
       setChatHistory([...newHistory, { role: 'assistant' as const, content: 'Sorry, something went wrong.' }]);
     } finally {
@@ -353,6 +380,10 @@ ${chatInput}`,
             boxShadow: '0 2px 12px #4a9eff11',
             minHeight: 60,
             whiteSpace: 'pre-line',
+            wordBreak: 'break-word',
+            overflowWrap: 'anywhere',
+            maxHeight: 300,
+            overflowY: 'auto',
           }}
             dangerouslySetInnerHTML={{ __html: marked(currentQuestion) }}
           />
@@ -467,7 +498,7 @@ ${chatInput}`,
           >Skip</button>
         </div>
         {/* Feedback */}
-        {showFeedback && feedback && !isChatting && (
+        {showFeedback && feedback && (
           <div style={{
             width: '100%',
             background: feedback.toLowerCase().includes('correct') ? 'linear-gradient(90deg, #22c55e 0%, #4a9eff 100%)' : 'linear-gradient(90deg, #ff5c5c 0%, #7f53ff 100%)',
@@ -480,12 +511,16 @@ ${chatInput}`,
             boxShadow: '0 2px 12px #4a9eff22',
             minHeight: 60,
             whiteSpace: 'pre-line',
+            wordBreak: 'break-word',
+            overflowWrap: 'anywhere',
+            maxHeight: 300,
+            overflowY: 'auto',
             animation: 'fadeIn 0.3s',
           }}>
-            <MarkdownRenderer content={feedback} />
+            {feedback && <MarkdownRenderer content={feedback} />}
           </div>
         )}
-        {/* Chat Interface */}
+        {/* Chat Interface - always show when isChatting is true */}
         {isChatting && (
           <div style={{ width: '100%', marginTop: 18 }}>
             <div style={{
@@ -498,6 +533,9 @@ ${chatInput}`,
               fontWeight: 500,
               minHeight: 40,
               boxShadow: '0 2px 8px #4a9eff11',
+              maxHeight: 300,
+              overflowY: 'auto',
+              wordBreak: 'break-word',
             }}>
               {chatHistory.map((msg, idx) => (
                 <div key={idx} style={{
@@ -509,12 +547,12 @@ ${chatInput}`,
                   padding: '8px 12px',
                   maxWidth: '90%',
                   wordBreak: 'break-word',
+                  overflowWrap: 'anywhere',
                   whiteSpace: 'pre-line',
-                  overflowWrap: 'break-word',
                   fontSize: 15
                 }}>
                   {msg.role === 'assistant' ? (
-                    <MarkdownRenderer content={msg.content} />
+                    msg.content && <MarkdownRenderer content={msg.content} />
                   ) : (
                     msg.content
                   )}
@@ -537,6 +575,7 @@ ${chatInput}`,
                 placeholder="Ask a follow-up question..."
                 style={{ flex: 1, borderRadius: 10, border: '1px solid #4a9eff33', padding: '10px 14px', fontSize: 15, background: '#181c20', color: '#e6e6e6' }}
                 disabled={isChatLoading}
+                autoFocus
               />
               <button
                 onClick={handleSendChat}
