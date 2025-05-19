@@ -120,9 +120,9 @@ const NotesPanel: React.FC<NotesPanelProps> = ({ notes, onNoteClick, onDeleteNot
               <div>No notes found.<br />Try a different search or tag.</div>
             </div>
           ) : (
-            filteredNotes.map(note => (
+            filteredNotes.map((note, idx) => (
               <div
-                key={note.id}
+                key={note.id || idx}
                 className="note-card"
                 style={{
                   background: 'linear-gradient(120deg, #23272f 0%, #23273a 100%)',

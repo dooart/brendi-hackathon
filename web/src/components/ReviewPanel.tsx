@@ -7,10 +7,10 @@ import { MarkdownRenderer } from './MarkdownRenderer';
 interface ReviewPanelProps {
   notes: Note[];
   onNoteClick: (note: Note) => void;
-  model?: 'openai' | 'local';
+  model: 'gemini' | 'openai' | 'local';
 }
 
-export const ReviewPanel: React.FC<ReviewPanelProps> = ({ notes, onNoteClick, model = 'openai' }) => {
+export const ReviewPanel: React.FC<ReviewPanelProps> = ({ notes, onNoteClick, model }) => {
   const [srsManager] = useState(() => new SRSManager());
   const [isLoading, setIsLoading] = useState(false);
   const [currentQuestion, setCurrentQuestion] = useState<string | null>(null);
@@ -63,20 +63,22 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ notes, onNoteClick, mo
     setIsLoading(true);
     try {
       // Generate a question based on the note content using LLM
-      const getEndpoint = () => model === 'openai' ? '/api/chat' : '/api/chat-local';
+      const getEndpoint = () => model === 'gemini' ? '/api/chat' : model === 'openai' ? '/api/chat' : '/api/chat-local';
       const response = await fetch(`http://localhost:3001${getEndpoint()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          message: `You are a helpful study assistant. Generate a challenging but fair question to test understanding of the following note. The question should:
-1. Test deep understanding rather than just memorization
-2. Be clear and specific
-3. NOT include the answer or hints
-4. Be appropriate for the content level
-5. Encourage critical thinking
+          message: `You are a study assistant. Generate a concise, atomic question suitable for a spaced repetition flashcard, based on the following note. The question should:
+- Be short and focused on a single fact or concept (atomic)
+- Avoid unnecessary context or explanation
+- Be clear and direct
+- Use Markdown for formatting (bold, italic, lists, code, quotes)
+- Use LaTeX for any math
+- Do NOT include the answer or hints
 
-Note to review:
-${note.content}` 
+Note:
+${note.content}`,
+          history: [] // Add empty history array
         }),
       });
 
@@ -85,7 +87,7 @@ ${note.content}`
       }
 
       const data = await response.json();
-      const question = data.message;
+      const question = data.response;
       setCurrentQuestion(question);
       setUserAnswer('');
     } catch (error) {
@@ -105,28 +107,29 @@ ${note.content}`
       const note = notes.find(n => n.id === currentNote?.noteId);
       
       const requestBody = { 
-        message: `You are a helpful study assistant providing personalized feedback. Your role is to:
-1. Analyze the student's answer thoughtfully
-2. Provide constructive feedback that helps them learn
-3. Identify misconceptions and explain them clearly
-4. Suggest ways to improve understanding
-5. Be encouraging and supportive
-6. Be ready for follow-up questions
-7. Maintain context of the conversation
-8. IMPORTANT: When outputting mathematical expressions, always use $...$ for inline math and $$...$$ for block math, following standard Markdown+LaTeX conventions, instead of simple markdown. Do NOT use [ ... ], ( ... ), or \\( ... \\) for math. For example: Inline: $x = 2y + 1$. Block: $$\\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}$$. Always ensure all math is properly delimited for Markdown rendering.\n\nOriginal Note Content:\n${note?.content}\n\nQuestion: ${currentQuestion}\n\nStudent's Answer: ${userAnswer}\n\nPlease provide personalized feedback and be ready for further questions.`,
+        message: `You are a study assistant. Review the student's answer to the flashcard question below. Your feedback should:
+- Be brief and to the point
+- Confirm if the answer is correct or not
+- If incorrect, state the correct answer concisely
+- Avoid unnecessary explanation
+- Use Markdown and LaTeX as needed
+
+Note:
+${note?.content}
+
+Question: ${currentQuestion}
+Student's Answer: ${userAnswer}`,
         history: [
           { 
-            role: 'system', 
-            content: `You are a helpful study assistant providing personalized feedback. You are discussing the following note:\n\n${note?.content}\n\nKeep this context in mind throughout the conversation.\n\nIMPORTANT: When outputting mathematical expressions, always use $...$ for inline math and $$...$$ for block math, following standard Markdown+LaTeX conventions. Do NOT use [ ... ], ( ... ), or \\( ... \\) for math. For example: Inline: $x = 2y + 1$. Block: $$\\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}$$. Always ensure all math is properly delimited for Markdown rendering.` 
+            role: 'system',
+            content: `You are a study assistant. You are discussing the following note in a spaced repetition/flashcard context:\n\n${note?.content}\n\nKeep your answers atomic and concise. Use Markdown and LaTeX as needed. Do NOT use HTML tags.`
           },
           { role: 'assistant', content: `Here is the question based on the note:\n\n${currentQuestion}` },
           { role: 'user', content: userAnswer }
         ]
       };
-      
-      console.log('Submitting answer - Request to model:', JSON.stringify(requestBody, null, 2));
-      
-      const getEndpoint = () => model === 'openai' ? '/api/chat' : '/api/chat-local';
+            
+      const getEndpoint = () => model === 'gemini' ? '/api/chat' : model === 'openai' ? '/api/chat' : '/api/chat-local';
       const response = await fetch(`http://localhost:3001${getEndpoint()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -136,12 +139,15 @@ ${note.content}`
         throw new Error('Failed to analyze answer');
       }
       const data = await response.json();
-      const feedback = data.message;
+      const feedback = data.response;
       setFeedback(feedback);
+      // Determine performance score based on feedback
+      const score = feedback.toLowerCase().includes('correct') ? 5 : 1;
+      srsManager.updateReviewPerformance(score);
       setChatHistory([
         { 
           role: 'system', 
-          content: `You are a helpful study assistant providing personalized feedback. You are discussing the following note:\n\n${note?.content}\n\nKeep this context in mind throughout the conversation.` 
+          content: `You are a study assistant. You are discussing the following note in a spaced repetition/flashcard context:\n\n${note?.content}\n\nKeep your answers atomic and concise. Use Markdown and LaTeX as needed. Do NOT use HTML tags.` 
         },
         { role: 'assistant', content: `Here is the question based on the note:\n\n${currentQuestion}` },
         { role: 'user', content: userAnswer },
@@ -182,16 +188,32 @@ ${note.content}`
 5. Check for understanding
 6. Be encouraging and supportive
 7. Maintain context of the conversation
-8. IMPORTANT: When outputting mathematical expressions, always use $...$ for inline math and $$...$$ for block math, following standard Markdown+LaTeX conventions. Do NOT use [ ... ], ( ... ), or \\( ... \\) for math. For example: Inline: $x = 2y + 1$. Block: $$\\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}$$. Always ensure all math is properly delimited for Markdown rendering.\n\nCurrent question: ${currentQuestion}\n\n${chatInput}`,
+8. Use Markdown for formatting:
+   - **bold** for emphasis
+   - *italic* for secondary emphasis
+   - \`code\` for technical terms
+   - Lists with - or 1. 2. 3.
+   - > for important quotes
+9. Use LaTeX for mathematical expressions:
+   - Inline math: $...$ (e.g., $E = mc^2$)
+   - Block math: $$...$$ (e.g., $$\\frac{d}{dx}f(x) = \\lim_{h \\to 0}\\frac{f(x+h) - f(x)}{h}$$)
+   - Use \\frac for fractions
+   - Use \\sum for summations
+   - Use \\int for integrals
+   - Use \\lim for limits
+   - Use subscripts with _ and superscripts with ^
+10. Do NOT use HTML tags
+
+Current question: ${currentQuestion}
+
+${chatInput}`,
         history: newHistory.map(m => ({ 
           role: m.role as 'user' | 'assistant' | 'system', 
           content: m.content 
         }))
       };
-      
-      console.log('Sending chat - Request to model:', JSON.stringify(requestBody, null, 2));
-      
-      const getEndpoint = () => model === 'openai' ? '/api/chat' : '/api/chat-local';
+            
+      const getEndpoint = () => model === 'gemini' ? '/api/chat' : model === 'openai' ? '/api/chat' : '/api/chat-local';
       const response = await fetch(`http://localhost:3001${getEndpoint()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -199,7 +221,7 @@ ${note.content}`
       });
       if (!response.ok) throw new Error('Failed to get response');
       const data = await response.json();
-      setChatHistory([...newHistory, { role: 'assistant' as const, content: data.message }]);
+      setChatHistory([...newHistory, { role: 'assistant' as const, content: data.response }]);
     } catch (err) {
       setChatHistory([...newHistory, { role: 'assistant' as const, content: 'Sorry, something went wrong.' }]);
     } finally {
@@ -327,6 +349,10 @@ ${note.content}`
             boxShadow: '0 2px 12px #4a9eff11',
             minHeight: 60,
             whiteSpace: 'pre-line',
+            wordBreak: 'break-word',
+            overflowWrap: 'anywhere',
+            maxHeight: 300,
+            overflowY: 'auto',
           }}
             dangerouslySetInnerHTML={{ __html: marked(currentQuestion) }}
           />
@@ -441,7 +467,7 @@ ${note.content}`
           >Skip</button>
         </div>
         {/* Feedback */}
-        {showFeedback && feedback && !isChatting && (
+        {showFeedback && feedback && (
           <div style={{
             width: '100%',
             background: feedback.toLowerCase().includes('correct') ? 'linear-gradient(90deg, #22c55e 0%, #4a9eff 100%)' : 'linear-gradient(90deg, #ff5c5c 0%, #7f53ff 100%)',
@@ -454,12 +480,16 @@ ${note.content}`
             boxShadow: '0 2px 12px #4a9eff22',
             minHeight: 60,
             whiteSpace: 'pre-line',
+            wordBreak: 'break-word',
+            overflowWrap: 'anywhere',
+            maxHeight: 300,
+            overflowY: 'auto',
             animation: 'fadeIn 0.3s',
           }}>
-            <MarkdownRenderer content={feedback} />
+            {feedback && <MarkdownRenderer content={feedback} />}
           </div>
         )}
-        {/* Chat Interface */}
+        {/* Chat Interface - always show when isChatting is true */}
         {isChatting && (
           <div style={{ width: '100%', marginTop: 18 }}>
             <div style={{
@@ -472,6 +502,9 @@ ${note.content}`
               fontWeight: 500,
               minHeight: 40,
               boxShadow: '0 2px 8px #4a9eff11',
+              maxHeight: 300,
+              overflowY: 'auto',
+              wordBreak: 'break-word',
             }}>
               {chatHistory.map((msg, idx) => (
                 <div key={idx} style={{
@@ -483,12 +516,12 @@ ${note.content}`
                   padding: '8px 12px',
                   maxWidth: '90%',
                   wordBreak: 'break-word',
+                  overflowWrap: 'anywhere',
                   whiteSpace: 'pre-line',
-                  overflowWrap: 'break-word',
                   fontSize: 15
                 }}>
                   {msg.role === 'assistant' ? (
-                    <MarkdownRenderer content={msg.content} />
+                    msg.content && <MarkdownRenderer content={msg.content} />
                   ) : (
                     msg.content
                   )}
@@ -511,6 +544,7 @@ ${note.content}`
                 placeholder="Ask a follow-up question..."
                 style={{ flex: 1, borderRadius: 10, border: '1px solid #4a9eff33', padding: '10px 14px', fontSize: 15, background: '#181c20', color: '#e6e6e6' }}
                 disabled={isChatLoading}
+                autoFocus
               />
               <button
                 onClick={handleSendChat}

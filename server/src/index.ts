@@ -1,18 +1,21 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { OpenAI } from 'openai';
-import { DocumentManager } from './documents';
-import { startNoteDetection, Note } from './notes';
-import { NoteDatabase } from './database';
+import { DocumentManager } from './documents.js';
+import { startNoteDetection, Note } from './notes.js';
+import { NoteDatabase } from './database.js';
 import fetch from 'node-fetch';
-import multer from 'multer';
+import multer, { Multer } from 'multer';
 import pdfParse from 'pdf-parse';
 import fs from 'fs';
 import path from 'path';
-import type { Request } from 'express';
-import DocumentDatabase from './documentDatabase';
+import DocumentDatabase from './documentDatabase.js';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js';
+import { generateGeminiResponse, generateNoteWithGemini, geminiModel } from './gemini.js';
+import { generateOpenAIResponse } from './openai.js';
+import { shouldCreateNote, isSimilarNote } from './notes.js';
+import { generateLocalResponse } from './local.js';
 
 dotenv.config();
 
@@ -48,8 +51,8 @@ const uploadDir = path.join(process.cwd(), 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 const upload = multer({ dest: uploadDir });
 
-// Initialize note detection system
-const noteDetection = startNoteDetection(openai, (note: Note) => {
+// Initialize note detection system with Gemini
+const noteDetection = startNoteDetection(geminiModel, (note: Note) => {
   lastCreatedNote = note;
   noteDb.saveNote(note);
   console.log('Note created:', note.title);
@@ -134,6 +137,17 @@ function logRagUsage(documentId: number, chunkIndexes: RAGChunk[], response: str
   }
 }
 
+interface OllamaEmbeddingResponse {
+  embedding: number[];
+}
+
+interface OllamaChatResponse {
+  message?: {
+    content: string;
+  };
+  content?: string;
+}
+
 // Helper to get embedding from Ollama
 async function getOllamaEmbedding(text: string): Promise<number[]> {
   const res = await fetch('http://localhost:11434/api/embeddings', {
@@ -146,7 +160,7 @@ async function getOllamaEmbedding(text: string): Promise<number[]> {
     console.error('Ollama embedding error:', errorText);
     throw new Error('Ollama embedding failed');
   }
-  const data = await res.json();
+  const data = await res.json() as OllamaEmbeddingResponse;
   if (!data.embedding) throw new Error('No embedding in Ollama response');
   return data.embedding;
 }
@@ -177,127 +191,98 @@ function averageEmbeddings(embeddings: number[][]): number[] {
   return sum.map(x => x / embeddings.length);
 }
 
-app.post('/api/chat', async (req, res) => {
+// Chat endpoint: only returns the AI response
+app.post('/api/chat', async (req: Request, res: Response) => {
   try {
-    const { message, history, useRag, embeddingProvider } = req.body;
-    if (!message && !history) {
-      return res.status(400).json({ error: 'Message or history is required' });
-    }
-    const provider = embeddingProvider === 'ollama' ? 'ollama' : 'openai';
+    const { message, history, model = 'gemini', useRag = false, embeddingProvider = 'openai' } = req.body;
 
-    let ragContext = '';
-    let usedRagChunks: { document_id: number; chunk_index: number; chunk_text: string }[] = [];
-    if (useRag) {
-      // Generate embedding for the query
-      const queryEmbedding = await getEmbedding(message.slice(0, 8000), provider);
-      // Get all chunks and their embeddings
-      const chunks = documentDb.getAllChunks();
-      console.log(`[RAG] Found ${chunks.length} total chunks in database`);
-      
-      const scored = chunks.map(chunk => ({
-        ...chunk,
-        score: cosineSimilarity(queryEmbedding, chunk.embedding)
-      }));
-      scored.sort((a, b) => b.score - a.score);
-      
-      // Lower the similarity threshold to 0.1 and take top 5 chunks
-      const topChunks = scored.slice(0, 5).filter(d => d.score > 0.1);
-      console.log(`[RAG] Found ${topChunks.length} relevant chunks with scores:`, topChunks.map(c => c.score));
-      
-      if (topChunks.length > 0) {
-        ragContext = topChunks.map(chunk => {
-          const meta = documentDb.getChunkWithDocMeta(chunk.id);
-          return meta ? `Source: ${meta.title} (${meta.originalname})\n${chunk.chunk_text}` : chunk.chunk_text;
-        }).join('\n---\n');
-        // Track which document and chunk indexes were used
-        usedRagChunks = topChunks.map(chunk => ({
-          document_id: chunk.document_id,
-          chunk_index: chunk.chunk_index,
-          chunk_text: chunk.chunk_text
+    if (!message) {
+      return res.status(400).json({ error: 'Message is required' });
+    }
+
+    let response: string;
+    let topChunks: any[] = [];
+    let context = '';
+    if (model === 'gemini') {
+      if (useRag) {
+        // Compute embedding for the user message
+        const queryEmbedding = await getEmbedding(message, embeddingProvider);
+        // Retrieve all document chunks
+        const allChunks = documentDb.getAllChunks();
+        // Compute similarity for each chunk
+        const scoredChunks = allChunks.map(chunk => ({
+          ...chunk,
+          similarity: cosineSimilarity(queryEmbedding, chunk.embedding)
         }));
-        console.log(`[RAG] Using chunks from documents:`, [...new Set(usedRagChunks.map(c => c.document_id))]);
-      } else {
-        console.log('[RAG] No relevant chunks found above similarity threshold');
+        // Sort by similarity and take top 5
+        topChunks = scoredChunks.sort((a, b) => b.similarity - a.similarity).slice(0, 5);
+        context = topChunks.map(chunk => chunk.chunk_text).join('\n\n');
       }
+      response = await generateGeminiResponse(message, history, context || undefined);
+      // Log RAG usage for Gemini
+      if (useRag && topChunks.length > 0) {
+        const docId = topChunks[0].document_id;
+        logRagUsage(
+          docId,
+          topChunks.map(chunk => ({ chunk_index: chunk.chunk_index, chunk_text: chunk.chunk_text })),
+          response,
+          Date.now()
+        );
+      }
+    } else if (model === 'openai') {
+      response = await generateOpenAIResponse(message, history);
+    } else if (model === 'local') {
+      response = await generateLocalResponse(message, history);
     } else {
-      console.log('[RAG] RAG is disabled for this request');
+      return res.status(400).json({ error: 'Invalid model specified' });
     }
 
-    // Use history if provided, otherwise fallback to old behavior
-    const messages = history && Array.isArray(history) && history.length > 0
-      ? history
-      : [
-          {
-            role: "system",
-            content: "You are a helpful study assistant. Format your responses using markdown for better readability. Use code blocks, bullet points, and text emphasis where appropriate."
-          },
-          {
-            role: "user",
-            content: message
-          }
-        ];
-
-    // Inject RAG context as a system message if present
-    let finalMessages = messages;
-    if (ragContext) {
-      finalMessages = [
-        { role: 'system', content: `You have access to the following documents for context. When using information from these documents, ALWAYS cite the document title and any available metadata in your answer. Make it clear to the user which information comes from which document.\n\n${ragContext}` },
-        ...messages
-      ];
-    }
-
-    const response = await openai.chat.completions.create({
-      model: "gpt-4.1-mini",
-      messages: finalMessages,
-      temperature: 0.7,
-      max_tokens: 1500
-    });
-
-    const aiResponse = response.choices[0].message.content;
-    if (!aiResponse) {
-      throw new Error('No response from OpenAI');
-    }
-
-    // Log RAG usage if any
-    if (usedRagChunks.length > 0) {
-      // Group by document_id
-      const byDoc: { [docId: number]: RAGChunk[] } = {};
-      usedRagChunks.forEach(c => {
-        if (!byDoc[c.document_id]) byDoc[c.document_id] = [];
-        byDoc[c.document_id].push({ chunk_index: c.chunk_index, chunk_text: c.chunk_text });
-      });
-      Object.entries(byDoc).forEach(([docId, chunks]) => {
-        logRagUsage(Number(docId), chunks, aiResponse, Date.now());
-      });
-    }
-
-    // Process the response for note detection
-    await noteDetection.process(
-      [
-        { role: 'user', content: message },
-        { role: 'assistant', content: aiResponse }
-      ],
-      Date.now().toString()
-    );
-
-    // Send response with note if one was created
-    const responseData: { message: string; note?: Note } = {
-      message: aiResponse
-    };
-
-    if (lastCreatedNote) {
-      responseData.note = lastCreatedNote;
-      lastCreatedNote = null;
-    }
-
-    res.json(responseData);
+    res.json({ response });
   } catch (error) {
     console.error('Error in chat endpoint:', error);
-    res.status(500).json({ error: 'Failed to process chat message' });
+    res.status(500).json({ error: 'Failed to generate response' });
   }
 });
 
-app.post('/api/chat-local', async (req, res) => {
+// Note endpoint: returns a note for a given assistant response
+app.post('/api/note', async (req: Request, res: Response) => {
+  try {
+    const { content } = req.body;
+    if (!content) {
+      return res.status(400).json({ error: 'Content is required' });
+    }
+
+    const shouldCreate = await shouldCreateNote(geminiModel, { role: 'assistant', content });
+    let notes: Note[] = [];
+    if (shouldCreate) {
+      const generatedNotes = await generateNoteWithGemini(
+        { role: 'assistant', content },
+        'chat-' + Date.now(),
+        0
+      );
+      // Save each unique note
+      const allNotes = noteDb.getAllNotes();
+      notes = generatedNotes.filter(note => {
+        if (!isSimilarNote(note, allNotes)) {
+          noteDb.saveNote(note);
+          allNotes.push(note); // Avoid near-duplicates in this batch
+          console.log('Note saved to database:', note.title);
+          return true;
+        } else {
+          console.log('Skipped duplicate/similar note:', note.title);
+          return false;
+        }
+      });
+    }
+
+    res.json({ notes });
+  } catch (error) {
+    console.error('Error in note endpoint:', error);
+    res.status(500).json({ error: 'Failed to generate note' });
+  }
+});
+
+app.post('/api/chat-local', async (req: Request, res: Response) => {
   try {
     const { message, history } = req.body;
     if (!message && !history) {
@@ -327,9 +312,9 @@ app.post('/api/chat-local', async (req, res) => {
         stream: false
       })
     });
-    const data = await ollamaRes.json();
+    const data = await ollamaRes.json() as OllamaChatResponse;
     // Ollama returns { message: { role, content }, ... }
-    const aiResponse = data.message?.content || data.message || '';
+    const aiResponse = data.message?.content || data.content || '';
     res.json({ message: aiResponse });
   } catch (error) {
     console.error('Error in chat-local endpoint:', error);
@@ -337,7 +322,7 @@ app.post('/api/chat-local', async (req, res) => {
   }
 });
 
-app.get('/api/notes', (req, res) => {
+app.get('/api/notes', (req: Request, res: Response) => {
   try {
     const notes = noteDb.getAllNotes();
     res.json({ notes });
@@ -347,7 +332,7 @@ app.get('/api/notes', (req, res) => {
   }
 });
 
-app.delete('/api/notes/:id', (req, res) => {
+app.delete('/api/notes/:id', (req: Request, res: Response) => {
   try {
     const noteId = req.params.id;
     noteDb.deleteNote(noteId);
@@ -358,7 +343,7 @@ app.delete('/api/notes/:id', (req, res) => {
   }
 });
 
-app.patch('/api/notes/:id', (req, res) => {
+app.patch('/api/notes/:id', (req: Request, res: Response) => {
   try {
     const noteId = req.params.id;
     const {
@@ -390,22 +375,23 @@ app.patch('/api/notes/:id', (req, res) => {
 });
 
 // Upload PDF, extract text, embed, save
-app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
+app.post('/api/documents/upload', upload.single('file'), async (req: Request & { file?: Express.Multer.File }, res: Response) => {
   const uploadId = generateUploadId();
   uploadStatus[uploadId] = { status: 'Uploading file...', progress: 0 };
   try {
-    const reqWithFile = req as Request & { file?: Express.Multer.File };
     const embeddingProvider = req.body.embeddingProvider === 'ollama' ? 'ollama' : 'openai';
-    if (!reqWithFile.file) {
+    if (!req.file) {
       uploadStatus[uploadId] = { status: 'No file uploaded', progress: 0, error: 'No file uploaded' };
       return res.status(400).json({ error: 'No file uploaded', uploadId });
     }
     uploadStatus[uploadId] = { status: 'Extracting text...', progress: 10 };
-    const { originalname, path: filePath } = reqWithFile.file;
+    const { originalname, path: filePath } = req.file;
     const dataBuffer = fs.readFileSync(filePath);
     const title = originalname.replace(/\.pdf$/i, '');
-    // Use pdfjsLib to stream pages
-    const loadingTask = pdfjsLib.getDocument({ data: dataBuffer });
+    // Use pdfjsLib.getDocument safely for Node.js
+    const getDocument = pdfjsLib.getDocument || (pdfjsLib as any).default?.getDocument;
+    if (!getDocument) throw new Error('pdfjsLib.getDocument is not available');
+    const loadingTask = getDocument({ data: dataBuffer });
     const pdf = await loadingTask.promise;
     const numPages = pdf.numPages;
     let docTextForEmbedding = '';

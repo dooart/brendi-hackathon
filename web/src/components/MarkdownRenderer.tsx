@@ -5,22 +5,29 @@ import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 
 interface MarkdownRendererProps {
-  content: string;
+  content?: string;
   className?: string;
 }
 
 // Preprocess to convert [ ... ] to $...$ for inline math and $$...$$ for block math
-function preprocessMath(content: string): string {
+function preprocessMath(content: string = ''): string {
+  if (!content) return '';
+  
   // Convert \$\$ ... \$\$ to $$ ... $$ for block math
   let processed = content.replace(/\\\$\\\$([\s\S]*?)\\\$\\\$/g, (match, math) => `$$${math}$$`);
+  
   // Convert [ ... ] to $...$ (only if it looks like LaTeX)
   processed = processed.replace(/\[([^\]]*\\[a-zA-Z]+[^\]]*)\]/g, (match, p1) => `$${p1}$`);
+  
   // Convert (\math... ) to $...$ for inline math
   processed = processed.replace(/\((\\[a-zA-Z]+[^\)]*)\)/g, (match, p1) => `$${p1}$`);
+  
   // Convert [\math... ] to $$...$$ for block math
   processed = processed.replace(/\[(\\[a-zA-Z]+[^\]]*)\]/g, (match, p1) => `$$${p1}$$`);
+  
   // Convert any $...$ block containing a newline into $$...$$
   processed = processed.replace(/\$([^$\n]*\n[^$]*)\$/g, (match, p1) => `$$${p1}$$`);
+  
   // Escape underscores in math mode (inside $...$ and $$...$$)
   processed = processed.replace(/\$\$([\s\S]*?)\$\$/g, (match, math) => {
     return `$$${math.replace(/([a-zA-Z0-9])_([a-zA-Z0-9])/g, '$1_{ $2 }')}$$`;
@@ -29,8 +36,7 @@ function preprocessMath(content: string): string {
     return `$${math.replace(/([a-zA-Z0-9])_([a-zA-Z0-9])/g, '$1_{ $2 }')}$`;
   });
 
-  // --- NEW: Ensure only math is inside $$...$$ blocks ---
-  // This will split any block like: $$math$$ text -> $$math$$\ntext
+  // Ensure only math is inside $$...$$ blocks
   processed = processed.replace(/\$\$([\s\S]*?)\$\$(?!\$)/g, (match, math) => {
     // Split at the first occurrence of a linebreak followed by non-math text
     const split = math.split(/(?<=\S)\n(?=[^\\$\\\\])/);
@@ -45,24 +51,21 @@ function preprocessMath(content: string): string {
     return `$$${math}$$`;
   });
 
-  // --- NEW: Replace | in subscripts/superscripts with \mid for KaTeX ---
-  // _{...|...} => _{...\mid...}, ^{...|...} => ^{...\mid...}
+  // Replace | in subscripts/superscripts with \mid for KaTeX
   processed = processed.replace(/_\{([^}]*)\|([^}]*)\}/g, '_{$1\\mid $2}');
   processed = processed.replace(/\^\{([^}]*)\|([^}]*)\}/g, '^{$1\\mid $2}');
 
-  // --- NEW: Remove all $$ inside math blocks (except delimiters) ---
-  // This will remove any accidental double-wrapping or $$ inside math
+  // Remove all $$ inside math blocks (except delimiters)
   processed = processed.replace(/\$\$([\s\S]*?)\$\$/g, (match, math) => {
-    // Remove any $$ inside the math block
     const cleaned = math.replace(/\$\$/g, '');
     return `$$${cleaned}$$`;
   });
 
-  // --- NEW: Remove stray \\ lines between blocks ---
+  // Remove stray \\ lines between blocks
   processed = processed.replace(/\\\s*\n/g, '\n');
   processed = processed.replace(/\\\s*$/gm, '');
 
-  // --- NEW: Remove empty lines between math blocks ---
+  // Remove empty lines between math blocks
   processed = processed.replace(/\n{2,}/g, '\n\n');
 
   // Convert $...$ on its own line (block) to $$...$$, even at end of file or with spaces
@@ -74,7 +77,9 @@ function preprocessMath(content: string): string {
 }
 
 // Aggressive preprocessing: convert all [ ... ] (anywhere) to $$ ... $$ for block math
-function simplePreprocess(content: string): string {
+function simplePreprocess(content: string = ''): string {
+  if (!content) return '';
+  
   // Replace all [ ... ] with $$ ... $$, even inline (not recommended for general markdown)
   let processed = content.replace(/\[\s*([\s\S]*?)\s*\]/g, (_, math) => `$$\n${math}\n$$`);
   // Remove any line that contains only a backslash inside a block math environment
@@ -94,9 +99,13 @@ function simplePreprocess(content: string): string {
   return processed;
 }
 
-export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className }) => {
-  // Bypass simplePreprocess for debugging math rendering
-  // const processed = simplePreprocess(content);
+export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content = '', className }) => {
+  const processed = preprocessMath(content);
+  
+  if (!content) {
+    return null;
+  }
+  
   return (
     <div className={className}>
       <ReactMarkdown
@@ -137,7 +146,9 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
                 <div {...props} className={className} style={{ 
                   overflowX: 'auto',
                   padding: '1em 0',
-                  margin: '1em 0'
+                  margin: '1em 0',
+                  background: 'rgba(0,0,0,0.1)',
+                  borderRadius: '8px'
                 }}>
                   {children}
                 </div>
@@ -149,7 +160,9 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
             if (className?.includes('math-inline')) {
               return (
                 <span {...props} className={className} style={{ 
-                  padding: '0 0.2em'
+                  padding: '0 0.2em',
+                  background: 'rgba(0,0,0,0.1)',
+                  borderRadius: '4px'
                 }}>
                   {children}
                 </span>
@@ -159,7 +172,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
           }
         }}
       >
-        {content}
+        {processed}
       </ReactMarkdown>
     </div>
   );

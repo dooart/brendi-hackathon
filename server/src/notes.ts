@@ -1,4 +1,4 @@
-import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NoteDatabase } from './database';
 
 export interface Note {
@@ -30,152 +30,231 @@ interface NoteDetectionCriteria {
 const NOTE_DETECTION_CRITERIA: NoteDetectionCriteria = {
   minMessageLength: 100,
   keywords: [
-    "atomic idea",
-    "core concept",
-    "key principle",
     "fundamental",
-    "essential",
-    "critical insight",
-    "central concept",
-    "main argument",
-    "theoretical framework",
-    "methodological approach"
+    "principle",
+    "concept",
+    "theory",
+    "law",
+    "method",
+    "technique",
+    "framework",
+    "model",
+    "paradigm",
+    "axiom",
+    "theorem",
+    "formula",
+    "equation",
+    "definition"
   ],
   concepts: [
-    "atomic idea",
-    "core concept",
-    "key principle",
     "fundamental",
-    "essential",
-    "critical insight",
-    "central concept",
-    "main argument",
-    "theoretical framework",
-    "methodological approach"
+    "principle",
+    "concept",
+    "theory",
+    "law",
+    "method",
+    "technique",
+    "framework",
+    "model",
+    "paradigm",
+    "axiom",
+    "theorem",
+    "formula",
+    "equation",
+    "definition"
   ]
 };
 
-async function shouldCreateNote(
-  openai: OpenAI,
+export async function shouldCreateNote(
+  geminiModel: any,
   message: { role: string; content: string }
-): Promise<boolean> {
-  if (message.role !== 'assistant') return false;
-  if (message.content.length < NOTE_DETECTION_CRITERIA.minMessageLength) return false;
+): Promise<false | { title: string; content: string; tags: string[] }> {
+  console.log('[Note Detection] Checking message:', message);
 
-  const hasKeywords = NOTE_DETECTION_CRITERIA.keywords.some(keyword =>
-    message.content.toLowerCase().includes(keyword.toLowerCase())
-  );
-
-  if (hasKeywords) return true;
-
-  try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4.1-mini",
-      messages: [
-        {
-          role: "system",
-          content: `You are a Zettelkasten note detection system. Analyze if the following message contains a single, atomic idea that would be valuable as a permanent note.
-
-Consider these strict criteria:
-1. Does it contain ONE clear, atomic idea?
-2. Is it a complete thought that stands on its own?
-3. Would it be valuable for future reference?
-4. Is it specific enough to be linked to other notes?
-5. Does it avoid being too general or obvious?
-
-Respond with 'YES' only if ALL criteria are met, otherwise 'NO'.`
-        },
-        {
-          role: "user",
-          content: message.content
-        }
-      ],
-      temperature: 0.3,
-      max_tokens: 10
-    });
-
-    const decision = response.choices[0].message.content?.toLowerCase().trim();
-    return decision === "yes";
-  } catch (error) {
-    console.error("Error in note detection:", error);
+  // Skip if not from assistant
+  if (message.role !== 'assistant') {
+    console.log('[Note Detection] Skipping - not from assistant');
     return false;
   }
+
+  // Skip if message is too short
+  if (message.content.length < 50) {
+    console.log('[Note Detection] Skipping - message too short');
+    return false;
+  }
+
+  // Skip if message is purely exploratory questions
+  const purelyExploratoryPhrases = [
+    'what would you like to explore',
+    'what aspects interest you',
+    'what would you like to focus on',
+    'what would you like to learn more about',
+    'what would you like to discuss',
+    'what would you like to know',
+    'what would you like to understand',
+    'what would you like to investigate',
+    'what would you like to examine',
+    'what would you like to look into'
+  ];
+
+  const isPurelyExploratory = purelyExploratoryPhrases.some(phrase => 
+    message.content.toLowerCase().includes(phrase) && 
+    message.content.split('.').length <= 2
+  );
+
+  if (isPurelyExploratory) {
+    console.log('[Note Detection] Skipping - purely exploratory questions');
+    return false;
+  }
+
+  // Check for fundamental concept indicators
+  const fundamentalIndicators = [
+    'fundamental',
+    'principle',
+    'concept',
+    'theory',
+    'law',
+    'method',
+    'approach',
+    'framework',
+    'paradigm',
+    'model',
+    'system',
+    'mechanism',
+    'process',
+    'strategy',
+    'technique'
+  ];
+
+  const hasFundamentalContent = fundamentalIndicators.some(indicator => 
+    message.content.toLowerCase().includes(indicator)
+  );
+
+  if (!hasFundamentalContent) {
+    console.log('[Note Detection] Skipping - no fundamental concepts detected');
+    return false;
+  }
+
+  console.log('[Note Detection] Creating note - fundamental concepts found');
+  return generateNote(geminiModel, message);
 }
 
+/**
+ * @deprecated This function is deprecated. Use the note generation functionality in gemini.ts instead.
+ * This function will be removed in a future version.
+ */
 async function generateNote(
-  openai: OpenAI,
-  message: { role: string; content: string },
-  conversationId: string,
-  messageIndex: number
-): Promise<Note> {
-  try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4.1-mini",
-      messages: [
-        {
-          role: "system",
-          content: `You are a Zettelkasten note-taking assistant. Create atomic, permanent notes following these strict principles:
+  geminiModel: any,
+  message: { role: string; content: string }
+): Promise<false | { title: string; content: string; tags: string[] }> {
+  console.warn('[DEPRECATED] The generateNote function in notes.ts is deprecated. Use the note generation functionality in gemini.ts instead.');
+  
+  console.log('[Note Generation] Processing message:', {
+    role: message.role,
+    content: message.content,
+    contentLength: message.content.length
+  });
 
-1. ONE note = ONE atomic idea
-2. Keep notes brief and focused (2-3 sentences maximum)
-3. Use your own words, not quotes
-4. Include clear connections to other concepts
-5. Use precise, technical language
-6. Make the note self-contained and understandable without context
-7. Focus on the core concept, not examples or applications
-8. Use clear, declarative statements
-9. Avoid generalizations and obvious statements
-10. Ensure the note can be linked to other notes
+  const prompt = `You are a Zettelkasten note-taking assistant. Your job is to create notes that directly answer the user's specific question.
 
-Format the response as JSON with this structure:
+- Create ONE note that:
+  - Directly answers the user's question
+  - Includes the specific subject of the question (e.g., software name, tool, concept)
+  - Explains what it is and what it's used for
+  - Makes the answer complete and self-contained
+
+- Each note must be:
+  - Focused on the specific question asked
+  - Clear and direct in its explanation
+  - Self-contained and valuable for reference
+  - Brief (2-3 sentences maximum)
+  - Written in your own words
+  - Specific to the subject of the question
+  - Memorable and easy to understand
+
+- Do NOT create notes for:
+  - Generic concepts without the specific subject
+  - Individual components or features
+  - Implementation details
+  - Procedural steps
+  - Temporary information
+  - Personal opinions
+  - Questions or uncertainties
+  - Related concepts that don't answer the question
+
+- Use Markdown for formatting (bold, italic, lists, code, quotes)
+- Use LaTeX for mathematical expressions (inline math: $...$, block math: $$...$$)
+
+**Example:**
+
+Message:
+"Maintenance management software helps organizations manage their maintenance operations through three key principles: planning and scheduling, work order management, and data analysis. These help prevent equipment failures and extend machinery life."
+
+Good (direct answer):
 {
-  "title": "Short, specific title (3-5 words) that captures the atomic idea",
-  "content": "One clear, atomic idea. Maximum 2-3 sentences. Focus on the core concept.",
-  "tags": ["array", "of", "relevant", "tags", "for", "linking", "and", "categorization"]
-}`
-        },
-        {
-          role: "user",
-          content: message.content
-        }
-      ],
-      temperature: 0.7,
-      max_tokens: 300,
-      response_format: { type: "json_object" }
+  "notes": [
+    {
+      "title": "Purpose of Maintenance Management Software",
+      "content": "Maintenance management software is designed to prevent equipment failures and extend machinery life by coordinating maintenance operations. It achieves this through systematic planning, work order management, and data-driven analysis of maintenance activities.",
+      "tags": ["maintenance", "software", "purpose", "equipment management"]
+    }
+  ]
+}
+
+Bad (generic concepts):
+{
+  "notes": [
+    {
+      "title": "Preventive Maintenance Principles",
+      "content": "Preventive maintenance involves planning and scheduling to prevent equipment failures.",
+      "tags": ["maintenance", "planning", "prevention"]
+    },
+    {
+      "title": "Resource Management",
+      "content": "Resource management optimizes the allocation of maintenance resources.",
+      "tags": ["resources", "optimization", "management"]
+    }
+  ]
+}
+
+Format your response as a JSON object with a 'notes' field (an array of notes, maximum one) as above. If there is no clear answer or concept worth noting, respond with "NO".
+
+Message to analyze:
+${message.content}`;
+
+  try {
+    console.log('[Note Generation] Sending prompt to Gemini:', {
+      promptLength: prompt.length,
+      messageIncluded: prompt.includes(message.content)
     });
 
-    const noteContent = response.choices[0].message.content;
-    if (!noteContent) {
-      throw new Error("Failed to generate note content");
+    const result = await geminiModel.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text().trim();
+    
+    console.log('[Note Generation] Received response:', {
+      responseLength: text.length,
+      isNo: text.toLowerCase() === 'no'
+    });
+    
+    if (text.toLowerCase() === 'no') {
+      return false;
     }
 
-    const parsedNote = JSON.parse(noteContent);
-    const now = new Date();
+    const noteJson = JSON.parse(text.replace(/```json|```/g, '').trim());
+    console.log('[Note Generation] Parsed note:', {
+      hasNotes: !!noteJson?.notes,
+      noteCount: noteJson?.notes?.length,
+      firstNoteTitle: noteJson?.notes?.[0]?.title
+    });
 
-    const uniqueId = `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-    return {
-      id: uniqueId,
-      title: parsedNote.title,
-      content: parsedNote.content,
-      tags: parsedNote.tags,
-      relatedNotes: [],
-      createdAt: now,
-      lastModified: now,
-      source: {
-        conversationId,
-        messageIndex
-      },
-      nextReview: undefined,
-      interval: undefined,
-      easiness: undefined,
-      repetitions: undefined,
-      lastReview: undefined,
-      lastPerformance: undefined
-    };
+    if (noteJson && noteJson.notes && Array.isArray(noteJson.notes) && noteJson.notes.length > 0) {
+      return noteJson.notes[0]; // Return the first note
+    }
+    return false;
   } catch (error) {
-    console.error("Error generating note:", error);
-    throw error;
+    console.error('[Note Generation] Error:', error);
+    return false;
   }
 }
 
@@ -202,10 +281,35 @@ function jaccardSimilarity(a: string[], b: string[]): number {
   return intersection.size / union.size;
 }
 
+// Utility function to normalize titles for comparison
+function normalizeTitle(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+// Utility function to check if a note is similar to any in a list, with logging
+function isSimilarNote(note: { title: string; content: string; tags: string[] }, existingNotes: Note[]): boolean {
+  // Check for exact title match
+  if (existingNotes.some(existing => existing.title === note.title)) {
+    return true;
+  }
+
+  // Check for similar content using a simple similarity check
+  const noteWords = new Set(note.content.toLowerCase().split(/\W+/));
+  return existingNotes.some(existing => {
+    const existingWords = new Set(existing.content.toLowerCase().split(/\W+/));
+    const intersection = new Set([...noteWords].filter(x => existingWords.has(x)));
+    const similarity = intersection.size / Math.max(noteWords.size, existingWords.size);
+    return similarity > 0.8; // 80% similarity threshold
+  });
+}
+
+export { isSimilarNote };
+
 export function startNoteDetection(
-  openai: OpenAI,
+  geminiModel: any,
   onNoteCreated: (note: Note) => void
 ): NoteDetectionSystem {
+  console.log('[Note Detection] Starting note detection system');
   let isRunning = true;
   const noteDb = new NoteDatabase();
 
@@ -213,40 +317,73 @@ export function startNoteDetection(
     conversation: { role: string; content: string }[],
     conversationId: string
   ) => {
-    if (!isRunning) return;
+    if (!isRunning) {
+      console.log('[Note Detection] System stopped, skipping processing');
+      return;
+    }
 
     try {
+      console.log('[Note Detection] Processing conversation:', {
+        conversationId,
+        messageCount: conversation.length
+      });
+
       const lastMessage = conversation[conversation.length - 1];
       if (lastMessage && lastMessage.role === "assistant") {
-        const shouldCreate = await shouldCreateNote(openai, lastMessage);
-        if (shouldCreate) {
-          const note = await generateNote(
-            openai,
-            lastMessage,
-            conversationId,
-            conversation.length - 1
-          );
+        console.log('[Note Detection] Found assistant message, checking for note creation:', {
+          messageLength: lastMessage.content.length,
+          messagePreview: lastMessage.content.substring(0, 100) + '...'
+        });
+        const note = await shouldCreateNote(geminiModel, lastMessage);
+        if (note && typeof note === 'object') {
+          console.log('[Note Detection] Note created:', {
+            title: note.title,
+            contentLength: note.content.length,
+            tags: note.tags
+          });
           // Check for similar notes before saving
           const allNotes = noteDb.getAllNotes();
-          const isDuplicate = allNotes.some(existing =>
-            stringSimilarity(existing.title, note.title) > 0.8 ||
-            jaccardSimilarity(existing.tags, note.tags) > 0.7
-          );
-          if (!isDuplicate) {
-            onNoteCreated(note);
+          if (!isSimilarNote(note, allNotes)) {
+            console.log('[Note Detection] Note is unique, saving:', {
+              title: note.title,
+              contentLength: note.content.length
+            });
+            const newNote: Note = {
+              ...note,
+              id: `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              relatedNotes: [],
+              createdAt: new Date(),
+              lastModified: new Date(),
+              source: {
+                conversationId,
+                messageIndex: conversation.length - 1
+              },
+              nextReview: undefined,
+              interval: undefined,
+              easiness: undefined,
+              repetitions: undefined,
+              lastReview: undefined,
+              lastPerformance: undefined
+            };
+            noteDb.saveNote(newNote);
           } else {
-            console.log('Skipped duplicate/similar note:', note.title);
+            console.log('[Note Detection] Note is similar to existing notes, skipping');
           }
+        } else {
+          console.log('[Note Detection] No note creation needed');
         }
+      } else {
+        console.log('[Note Detection] Last message is not from assistant, skipping');
       }
     } catch (error) {
-      console.error("Error in note detection process:", error);
+      console.error("[Note Detection] Error in note detection process:", error);
     }
   };
 
   return {
     process,
     stop: () => {
+      console.log('[Note Detection] Stopping note detection system');
       isRunning = false;
     }
   };
