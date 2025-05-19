@@ -178,6 +178,37 @@ Student's Answer: ${userAnswer}`,
         await updateNoteInDatabase(currentNote.noteId, newState);
       }
 
+      // Create a note for incorrect answers
+      if (score < 3) {
+        const noteResponse = await fetch('http://localhost:3001/api/note', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: `Common Misconception: ${note?.title}
+
+Question: ${currentQuestion}
+Student's Answer: ${userAnswer}
+Correct Answer: ${feedback.replace(/^(INCORRECT:|CORRECT:)/i, '').trim()}
+
+This note captures a common misconception about ${note?.title}. The student's answer reveals a misunderstanding that should be addressed.`
+          })
+        });
+        if (noteResponse.ok) {
+          const noteData = await noteResponse.json();
+          if (noteData.notes && Array.isArray(noteData.notes) && noteData.notes.length > 0) {
+            // Add the new note to the notes array
+            const newNotes = [...notes, ...noteData.notes];
+            // Update the parent component's notes
+            onNoteClick(noteData.notes[0]);
+            // Add the new note to chat history
+            setChatHistory(prev => [...prev, { 
+              role: 'assistant', 
+              content: `I've created a new note about this misconception:\n\n${noteData.notes[0].content}` 
+            }]);
+          }
+        }
+      }
+
       setChatHistory([
         { 
           role: 'system', 
@@ -229,7 +260,6 @@ Student's Answer: ${userAnswer}`,
    - *italic* for secondary emphasis
    - \`code\` for technical terms
    - Lists with - or 1. 2. 3.
-   - > for important quotes
 9. Use LaTeX for mathematical expressions:
    - Inline math: $...$ (e.g., $E = mc^2$)
    - Block math: $$...$$ (e.g., $$\\frac{d}{dx}f(x) = \\lim_{h \\to 0}\\frac{f(x+h) - f(x)}{h}$$)
@@ -257,7 +287,37 @@ ${chatInput}`,
       });
       if (!response.ok) throw new Error('Failed to get response');
       const data = await response.json();
-      setChatHistory([...newHistory, { role: 'assistant' as const, content: data.response }]);
+      const aiResponse = data.response;
+      setChatHistory([...newHistory, { role: 'assistant' as const, content: aiResponse }]);
+
+      // Create a note for follow-up questions that reveal misconceptions
+      const noteResponse = await fetch('http://localhost:3001/api/note', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: `Follow-up Question: ${note?.title}
+
+Original Question: ${currentQuestion}
+Student's Question: ${chatInput}
+Assistant's Response: ${aiResponse}
+
+This note captures a follow-up question that reveals potential misconceptions or areas needing clarification about ${note?.title}.`
+        })
+      });
+      if (noteResponse.ok) {
+        const noteData = await noteResponse.json();
+        if (noteData.notes && Array.isArray(noteData.notes) && noteData.notes.length > 0) {
+          // Add the new note to the notes array
+          const newNotes = [...notes, ...noteData.notes];
+          // Update the parent component's notes
+          onNoteClick(noteData.notes[0]);
+          // Add the new note to chat history
+          setChatHistory(prev => [...prev, { 
+            role: 'assistant', 
+            content: `I've created a new note about this follow-up question:\n\n${noteData.notes[0].content}` 
+          }]);
+        }
+      }
     } catch (err) {
       setChatHistory([...newHistory, { role: 'assistant' as const, content: 'Sorry, something went wrong.' }]);
     } finally {
