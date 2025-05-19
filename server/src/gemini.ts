@@ -21,13 +21,19 @@ const geminiModel = genAI.getGenerativeModel({
 
 export async function generateGeminiResponse(
   message: string,
-  history: { role: string; content: string }[]
+  history: { role: string; content: string }[],
+  context?: string
 ): Promise<string> {
   try {
     // Filter out system messages and ensure first message is from user
     const filteredHistory = history.filter(msg => msg.role !== 'system');
     if (filteredHistory.length === 0 || filteredHistory[0].role !== 'user') {
       filteredHistory.unshift({ role: 'user', content: message });
+    }
+
+    let prompt = message;
+    if (context) {
+      prompt = `${context}\n\n${message}`;
     }
 
     const chat = geminiModel.startChat({
@@ -37,7 +43,7 @@ export async function generateGeminiResponse(
       }))
     });
 
-    const result = await chat.sendMessage(message);
+    const result = await chat.sendMessage(prompt);
     const response = await result.response;
     return response.text();
   } catch (error) {

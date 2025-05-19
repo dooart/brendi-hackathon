@@ -194,15 +194,41 @@ function averageEmbeddings(embeddings: number[][]): number[] {
 // Chat endpoint: only returns the AI response
 app.post('/api/chat', async (req: Request, res: Response) => {
   try {
-    const { message, history, model = 'gemini', useRag = false } = req.body;
+    const { message, history, model = 'gemini', useRag = false, embeddingProvider = 'openai' } = req.body;
 
     if (!message) {
       return res.status(400).json({ error: 'Message is required' });
     }
 
     let response: string;
+    let topChunks: any[] = [];
+    let context = '';
     if (model === 'gemini') {
-      response = await generateGeminiResponse(message, history);
+      if (useRag) {
+        // Compute embedding for the user message
+        const queryEmbedding = await getEmbedding(message, embeddingProvider);
+        // Retrieve all document chunks
+        const allChunks = documentDb.getAllChunks();
+        // Compute similarity for each chunk
+        const scoredChunks = allChunks.map(chunk => ({
+          ...chunk,
+          similarity: cosineSimilarity(queryEmbedding, chunk.embedding)
+        }));
+        // Sort by similarity and take top 5
+        topChunks = scoredChunks.sort((a, b) => b.similarity - a.similarity).slice(0, 5);
+        context = topChunks.map(chunk => chunk.chunk_text).join('\n\n');
+      }
+      response = await generateGeminiResponse(message, history, context || undefined);
+      // Log RAG usage for Gemini
+      if (useRag && topChunks.length > 0) {
+        const docId = topChunks[0].document_id;
+        logRagUsage(
+          docId,
+          topChunks.map(chunk => ({ chunk_index: chunk.chunk_index, chunk_text: chunk.chunk_text })),
+          response,
+          Date.now()
+        );
+      }
     } else if (model === 'openai') {
       response = await generateOpenAIResponse(message, history);
     } else if (model === 'local') {
@@ -349,8 +375,10 @@ app.post('/api/documents/upload', upload.single('file'), async (req: Request & {
     const { originalname, path: filePath } = req.file;
     const dataBuffer = fs.readFileSync(filePath);
     const title = originalname.replace(/\.pdf$/i, '');
-    // Use pdfjsLib to stream pages
-    const loadingTask = pdfjsLib.getDocument({ data: dataBuffer });
+    // Use pdfjsLib.getDocument safely for Node.js
+    const getDocument = pdfjsLib.getDocument || (pdfjsLib as any).default?.getDocument;
+    if (!getDocument) throw new Error('pdfjsLib.getDocument is not available');
+    const loadingTask = getDocument({ data: dataBuffer });
     const pdf = await loadingTask.promise;
     const numPages = pdf.numPages;
     let docTextForEmbedding = '';
