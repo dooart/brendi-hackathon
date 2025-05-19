@@ -68,29 +68,15 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ notes, onNoteClick, mo
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          message: `You are a helpful study assistant. Generate a challenging but fair question to test understanding of the following note. The question should:
-1. Test deep understanding rather than just memorization
-2. Be clear and specific
-3. NOT include the answer or hints
-4. Be appropriate for the content level
-5. Encourage critical thinking
-6. Use Markdown for formatting:
-   - **bold** for emphasis
-   - *italic* for secondary emphasis
-   - \`code\` for technical terms
-   - Lists with - or 1. 2. 3.
-   - > for important quotes
-7. Use LaTeX for mathematical expressions:
-   - Inline math: $...$ (e.g., $E = mc^2$)
-   - Block math: $$...$$ (e.g., $$\\frac{d}{dx}f(x) = \\lim_{h \\to 0}\\frac{f(x+h) - f(x)}{h}$$)
-   - Use \\frac for fractions
-   - Use \\sum for summations
-   - Use \\int for integrals
-   - Use \\lim for limits
-   - Use subscripts with _ and superscripts with ^
-8. Do NOT use HTML tags
+          message: `You are a study assistant. Generate a concise, atomic question suitable for a spaced repetition flashcard, based on the following note. The question should:
+- Be short and focused on a single fact or concept (atomic)
+- Avoid unnecessary context or explanation
+- Be clear and direct
+- Use Markdown for formatting (bold, italic, lists, code, quotes)
+- Use LaTeX for any math
+- Do NOT include the answer or hints
 
-Note to review:
+Note:
 ${note.content}`,
           history: [] // Add empty history array
         }),
@@ -121,42 +107,22 @@ ${note.content}`,
       const note = notes.find(n => n.id === currentNote?.noteId);
       
       const requestBody = { 
-        message: `You are a helpful study assistant providing personalized feedback. Your role is to:
-1. Analyze the student's answer thoughtfully
-2. Provide constructive feedback that helps them learn
-3. Identify misconceptions and explain them clearly
-4. Suggest ways to improve understanding
-5. Be encouraging and supportive
-6. Be ready for follow-up questions
-7. Maintain context of the conversation
-8. Use Markdown for formatting:
-   - **bold** for emphasis
-   - *italic* for secondary emphasis
-   - \`code\` for technical terms
-   - Lists with - or 1. 2. 3.
-   - > for important quotes
-9. Use LaTeX for mathematical expressions:
-   - Inline math: $...$ (e.g., $E = mc^2$)
-   - Block math: $$...$$ (e.g., $$\\frac{d}{dx}f(x) = \\lim_{h \\to 0}\\frac{f(x+h) - f(x)}{h}$$)
-   - Use \\frac for fractions
-   - Use \\sum for summations
-   - Use \\int for integrals
-   - Use \\lim for limits
-   - Use subscripts with _ and superscripts with ^
-10. Do NOT use HTML tags
+        message: `You are a study assistant. Review the student's answer to the flashcard question below. Your feedback should:
+- Be brief and to the point
+- Confirm if the answer is correct or not
+- If incorrect, state the correct answer concisely
+- Avoid unnecessary explanation
+- Use Markdown and LaTeX as needed
 
-Original Note Content:
+Note:
 ${note?.content}
 
 Question: ${currentQuestion}
-
-Student's Answer: ${userAnswer}
-
-Please provide personalized feedback and be ready for further questions.`,
+Student's Answer: ${userAnswer}`,
         history: [
           { 
-            role: 'system', 
-            content: `You are a helpful study assistant providing personalized feedback. You are discussing the following note:\n\n${note?.content}\n\nKeep this context in mind throughout the conversation.\n\nUse Markdown for formatting and LaTeX for mathematical expressions. Do NOT use HTML tags.` 
+            role: 'system',
+            content: `You are a study assistant. You are discussing the following note in a spaced repetition/flashcard context:\n\n${note?.content}\n\nKeep your answers atomic and concise. Use Markdown and LaTeX as needed. Do NOT use HTML tags.`
           },
           { role: 'assistant', content: `Here is the question based on the note:\n\n${currentQuestion}` },
           { role: 'user', content: userAnswer }
@@ -178,7 +144,7 @@ Please provide personalized feedback and be ready for further questions.`,
       setChatHistory([
         { 
           role: 'system', 
-          content: `You are a helpful study assistant providing personalized feedback. You are discussing the following note:\n\n${note?.content}\n\nKeep this context in mind throughout the conversation.` 
+          content: `You are a study assistant. You are discussing the following note in a spaced repetition/flashcard context:\n\n${note?.content}\n\nKeep your answers atomic and concise. Use Markdown and LaTeX as needed. Do NOT use HTML tags.` 
         },
         { role: 'assistant', content: `Here is the question based on the note:\n\n${currentQuestion}` },
         { role: 'user', content: userAnswer },

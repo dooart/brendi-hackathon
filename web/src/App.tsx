@@ -22,7 +22,7 @@ The notes will be displayed in the chat with proper formatting and tags. You can
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [model, setModel] = useState<'gemini' | 'openai' | 'local'>('gemini');
-  const [embeddingProvider, setEmbeddingProvider] = useState<'openai' | 'ollama'>('openai');
+  const [embeddingProvider, setEmbeddingProvider] = useState<'openai' | 'ollama'>('ollama');
 
   const fetchNotes = async () => {
     try {
