@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Note } from '../types';
 import { MarkdownRenderer } from './MarkdownRenderer';
 
@@ -13,6 +13,16 @@ const NotesPanel: React.FC<NotesPanelProps> = ({ notes, onNoteClick, onDeleteNot
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [modalNote, setModalNote] = useState<Note | null>(null);
   const [showTags, setShowTags] = useState(false);
+
+  // Update modal note when notes array changes
+  useEffect(() => {
+    if (modalNote) {
+      const updatedNote = notes.find(n => n.id === modalNote.id);
+      if (updatedNote) {
+        setModalNote(updatedNote);
+      }
+    }
+  }, [notes]);
 
   // Gather all unique tags for quick filter
   const allTags = Array.from(new Set(notes.flatMap(n => n.tags)));
@@ -238,6 +248,42 @@ const NotesPanel: React.FC<NotesPanelProps> = ({ notes, onNoteClick, onDeleteNot
             <h2 style={{ color: '#7f53ff', fontWeight: 800, fontSize: 26, margin: 0 }}>{modalNote.title}</h2>
             <div style={{ color: '#b0b8c1', fontSize: 17, marginBottom: 8, fontWeight: 500 }}>
               <MarkdownRenderer content={modalNote.content} />
+            </div>
+            {/* SRS Information */}
+            <div style={{ 
+              background: 'linear-gradient(90deg, #23273a 0%, #23272f 100%)',
+              borderRadius: 16,
+              padding: '18px 20px',
+              marginBottom: 8,
+              border: '1.5px solid #4a9eff33'
+            }}>
+              <div style={{ color: '#7f53ff', fontWeight: 700, fontSize: 16, marginBottom: 12 }}>Review Status</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 20px' }}>
+                <div>
+                  <div style={{ color: '#b0b8c1', fontSize: 14, marginBottom: 4 }}>Next Review</div>
+                  <div style={{ color: '#e6e6e6', fontWeight: 600 }}>
+                    {modalNote.nextReview ? new Date(modalNote.nextReview).toLocaleDateString() : 'Not scheduled'}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ color: '#b0b8c1', fontSize: 14, marginBottom: 4 }}>Interval</div>
+                  <div style={{ color: '#e6e6e6', fontWeight: 600 }}>
+                    {modalNote.interval ? `${modalNote.interval} days` : 'Not set'}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ color: '#b0b8c1', fontSize: 14, marginBottom: 4 }}>Easiness</div>
+                  <div style={{ color: '#e6e6e6', fontWeight: 600 }}>
+                    {modalNote.easiness ? modalNote.easiness.toFixed(2) : 'Not set'}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ color: '#b0b8c1', fontSize: 14, marginBottom: 4 }}>Last Performance</div>
+                  <div style={{ color: '#e6e6e6', fontWeight: 600 }}>
+                    {modalNote.lastPerformance ? `${modalNote.lastPerformance}/5` : 'Not reviewed'}
+                  </div>
+                </div>
+              </div>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
               {modalNote.tags.map(tag => (
