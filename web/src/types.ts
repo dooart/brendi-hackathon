@@ -1,6 +1,12 @@
 export interface Message {
   role: 'user' | 'assistant';
   content: string;
+  retrievedChunks?: {
+    documentId: number;
+    chunkIndex: number;
+    text: string;
+    similarity: number;
+  }[];
 }
 
 export interface Note {

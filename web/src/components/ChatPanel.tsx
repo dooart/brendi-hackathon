@@ -2,6 +2,13 @@ import React, { useState, useEffect, RefObject } from 'react';
 import { Message } from '../types';
 import { MarkdownRenderer } from './MarkdownRenderer';
 
+interface RetrievedChunk {
+  documentId: number;
+  chunkIndex: number;
+  text: string;
+  similarity: number;
+}
+
 export interface ChatPanelProps {
   messages: Message[];
   isLoading: boolean;
@@ -21,6 +28,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 }) => {
   const [input, setInput] = useState('');
   const [useRag, setUseRag] = useState(false);
+  const [showChunksModal, setShowChunksModal] = useState(false);
+  const [retrievedChunks, setRetrievedChunks] = useState<RetrievedChunk[]>([]);
 
   const handleSendMessage = async () => {
     if (!input.trim()) return;
@@ -79,6 +88,27 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
               }} />
             )}
             <MarkdownRenderer content={message.content} />
+            {message.retrievedChunks && message.retrievedChunks.length > 0 && (
+              <button
+                onClick={() => {
+                  setRetrievedChunks(message.retrievedChunks);
+                  setShowChunksModal(true);
+                }}
+                style={{
+                  background: 'none',
+                  border: '1px solid #4a9eff33',
+                  color: '#4a9eff',
+                  padding: '4px 8px',
+                  borderRadius: 4,
+                  fontSize: 12,
+                  marginTop: 8,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                View Sources ({message.retrievedChunks.length})
+              </button>
+            )}
           </div>
         ))}
         {isLoading && (
@@ -92,6 +122,30 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         )}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Retrieved Chunks Modal */}
+      {showChunksModal && (
+        <div className="doc-modal-overlay" onClick={() => setShowChunksModal(false)}>
+          <div className="doc-modal" onClick={e => e.stopPropagation()}>
+            <button className="doc-modal-close" onClick={() => setShowChunksModal(false)}>×</button>
+            <h2 className="doc-modal-title">Retrieved Sources</h2>
+            <div className="doc-modal-usage-list">
+              {retrievedChunks.map((chunk, index) => (
+                <div key={index} className="doc-modal-usage-entry">
+                  <div className="doc-modal-usage-time">
+                    Similarity: {(chunk.similarity * 100).toFixed(2)}%
+                  </div>
+                  <div className="doc-modal-usage-chunk">
+                    <span className="doc-modal-usage-chunk-index">Document {chunk.documentId}, Chunk {chunk.chunkIndex}:</span>
+                    <span className="doc-modal-usage-chunk-text">{chunk.text}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', maxWidth: 600, margin: '0 auto', padding: '0 0 8px 0' }}>
         <label className="toggle-switch">
           <input
@@ -117,7 +171,6 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
               e.preventDefault();
               handleSendMessage();
             }
-            // Shift+Enter inserts newline by default
           }}
         />
         <button

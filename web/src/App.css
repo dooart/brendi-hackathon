@@ -1439,48 +1439,68 @@ textarea:focus {
   font-size: 0.98rem;
   font-weight: 600;
   margin-bottom: 2px;
+  cursor: pointer;
+  padding: 8px 12px;
+  background: #1a1d24;
+  border-radius: 8px;
+  transition: background 0.2s;
 }
+
+.doc-modal-usage-response-label:hover {
+  background: #23272f;
+}
+
+.doc-modal-usage-response-label::before {
+  content: '▶';
+  display: inline-block;
+  margin-right: 8px;
+  transition: transform 0.2s;
+}
+
+details[open] .doc-modal-usage-response-label::before {
+  transform: rotate(90deg);
+}
+
 .doc-modal-usage-response {
   color: #e6e6e6;
   background: #23272f;
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 12px;
   font-size: 1.01rem;
-  margin-bottom: 4px;
+  margin: 8px 0;
   max-height: 120px;
   overflow-y: auto;
   word-break: break-word;
   box-shadow: 0 1px 4px #4a9eff11;
 }
-.doc-modal-usage-chunks-label {
-  color: #b0b8c1;
-  font-size: 0.97rem;
-  font-weight: 500;
-  margin-bottom: 2px;
-}
+
 .doc-modal-usage-chunks {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  margin-top: 8px;
 }
+
 .doc-modal-usage-chunk {
   background: #23272f;
   border-radius: 7px;
-  padding: 7px 10px;
+  padding: 8px 12px;
   color: #4a9eff;
   font-size: 0.98rem;
   box-shadow: 0 1px 4px #4a9eff11;
-  margin-bottom: 2px;
   word-break: break-word;
 }
+
 .doc-modal-usage-chunk-index {
   font-weight: 700;
   color: #7f53ff;
   margin-right: 6px;
 }
+
 .doc-modal-usage-chunk-text {
   color: #b0b8c1;
 }
+
 @media (max-width: 700px) {
   .doc-modal {
     min-width: 0;

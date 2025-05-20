@@ -69,8 +69,6 @@ export async function shouldCreateNote(
   geminiModel: any,
   message: { role: string; content: string }
 ): Promise<false | { title: string; content: string; tags: string[] }> {
-  console.log('[Note Detection] Checking message:', message);
-
   // Skip if not from assistant
   if (message.role !== 'assistant') {
     console.log('[Note Detection] Skipping - not from assistant');
@@ -151,7 +149,6 @@ async function generateNote(
   
   console.log('[Note Generation] Processing message:', {
     role: message.role,
-    content: message.content,
     contentLength: message.content.length
   });
 

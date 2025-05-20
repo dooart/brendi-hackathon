@@ -68,7 +68,11 @@ export class DocumentDatabase {
   }
 
   getAllChunks(): { id: number; document_id: number; chunk_index: number; chunk_text: string; embedding: number[] }[] {
-    const rows = this.db.prepare('SELECT id, document_id, chunk_index, chunk_text, embedding FROM document_chunks').all();
+    const rows = this.db.prepare(`
+      SELECT id, document_id, chunk_index, chunk_text, embedding 
+      FROM document_chunks 
+      ORDER BY document_id, chunk_index ASC
+    `).all();
     return rows.map((row: any) => ({ ...row, embedding: JSON.parse(row.embedding) }));
   }
 

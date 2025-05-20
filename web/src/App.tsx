@@ -89,7 +89,11 @@ The notes will be displayed in the chat with proper formatting and tags. You can
 
       const data = await response.json();
       const aiResponse = data.response;
-      setMessages(prev => [...prev, { role: 'assistant', content: aiResponse }]);
+      setMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: aiResponse,
+        retrievedChunks: data.retrievedChunks
+      }]);
 
       // Call /api/note with the assistant's response
       const noteRes = await fetch('http://localhost:3001/api/note', {

@@ -11,69 +11,8 @@ interface MarkdownRendererProps {
 
 // Preprocess to convert [ ... ] to $...$ for inline math and $$...$$ for block math
 function preprocessMath(content: string = ''): string {
-  if (!content) return '';
-  
-  // Convert \$\$ ... \$\$ to $$ ... $$ for block math
-  let processed = content.replace(/\\\$\\\$([\s\S]*?)\\\$\\\$/g, (match, math) => `$$${math}$$`);
-  
-  // Convert [ ... ] to $...$ (only if it looks like LaTeX)
-  processed = processed.replace(/\[([^\]]*\\[a-zA-Z]+[^\]]*)\]/g, (match, p1) => `$${p1}$`);
-  
-  // Convert (\math... ) to $...$ for inline math
-  processed = processed.replace(/\((\\[a-zA-Z]+[^\)]*)\)/g, (match, p1) => `$${p1}$`);
-  
-  // Convert [\math... ] to $$...$$ for block math
-  processed = processed.replace(/\[(\\[a-zA-Z]+[^\]]*)\]/g, (match, p1) => `$$${p1}$$`);
-  
-  // Convert any $...$ block containing a newline into $$...$$
-  processed = processed.replace(/\$([^$\n]*\n[^$]*)\$/g, (match, p1) => `$$${p1}$$`);
-  
-  // Escape underscores in math mode (inside $...$ and $$...$$)
-  processed = processed.replace(/\$\$([\s\S]*?)\$\$/g, (match, math) => {
-    return `$$${math.replace(/([a-zA-Z0-9])_([a-zA-Z0-9])/g, '$1_{ $2 }')}$$`;
-  });
-  processed = processed.replace(/\$([^$\n]+)\$/g, (match, math) => {
-    return `$${math.replace(/([a-zA-Z0-9])_([a-zA-Z0-9])/g, '$1_{ $2 }')}$`;
-  });
-
-  // Ensure only math is inside $$...$$ blocks
-  processed = processed.replace(/\$\$([\s\S]*?)\$\$(?!\$)/g, (match, math) => {
-    // Split at the first occurrence of a linebreak followed by non-math text
-    const split = math.split(/(?<=\S)\n(?=[^\\$\\\\])/);
-    if (split.length > 1) {
-      return `$$${split[0]}$$\n${split.slice(1).join('\n')}`;
-    }
-    // Also split if there is a 'where' or other text after the math
-    const whereIdx = math.indexOf('where ');
-    if (whereIdx !== -1) {
-      return `$$${math.slice(0, whereIdx).trim()}$$\n${math.slice(whereIdx)}`;
-    }
-    return `$$${math}$$`;
-  });
-
-  // Replace | in subscripts/superscripts with \mid for KaTeX
-  processed = processed.replace(/_\{([^}]*)\|([^}]*)\}/g, '_{$1\\mid $2}');
-  processed = processed.replace(/\^\{([^}]*)\|([^}]*)\}/g, '^{$1\\mid $2}');
-
-  // Remove all $$ inside math blocks (except delimiters)
-  processed = processed.replace(/\$\$([\s\S]*?)\$\$/g, (match, math) => {
-    const cleaned = math.replace(/\$\$/g, '');
-    return `$$${cleaned}$$`;
-  });
-
-  // Remove stray \\ lines between blocks
-  processed = processed.replace(/\\\s*\n/g, '\n');
-  processed = processed.replace(/\\\s*$/gm, '');
-
-  // Remove empty lines between math blocks
-  processed = processed.replace(/\n{2,}/g, '\n\n');
-
-  // Convert $...$ on its own line (block) to $$...$$, even at end of file or with spaces
-  processed = processed.replace(/(^|[\n\r])\$\s*[\n\r]+([\s\S]*?)[\n\r]+\$([\n\r]|$)/g, '$1$$\n$2\n$$$3');
-  // Fallback: block math at end of file without trailing newline
-  processed = processed.replace(/(^|[\n\r])\$\s*[\n\r]+([\s\S]*?)\s*\$(\s*)$/g, '$1$$\n$2\n$$$3');
-
-  return processed;
+  // Only handle $...$ and $$...$$, and preserve newlines
+  return content;
 }
 
 // Aggressive preprocessing: convert all [ ... ] (anywhere) to $$ ... $$ for block math
