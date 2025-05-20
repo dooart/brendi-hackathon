@@ -214,18 +214,23 @@ app.post('/api/chat', async (req: Request, res: Response) => {
           ...chunk,
           similarity: cosineSimilarity(queryEmbedding, chunk.embedding)
         }));
-        // Sort by similarity and take top chunks
-        topChunks = scoredChunks
-          .sort((a, b) => b.similarity - a.similarity)
-          .slice(0, maxChunks);
-
+        // Filter by threshold
+        const SIMILARITY_THRESHOLD = 0.7;
+        let filteredChunks = scoredChunks.filter(chunk => chunk.similarity >= SIMILARITY_THRESHOLD);
+        // If none meet the threshold, fall back to top 3
+        if (filteredChunks.length === 0) {
+          filteredChunks = scoredChunks.sort((a, b) => b.similarity - a.similarity).slice(0, 3);
+        } else {
+          // Otherwise, sort by similarity descending
+          filteredChunks = filteredChunks.sort((a, b) => b.similarity - a.similarity);
+        }
+        topChunks = filteredChunks;
         // Log similarity scores for retrieved chunks
         console.log('\nRetrieved chunks similarity scores:');
         topChunks.forEach((chunk, index) => {
           console.log(`Chunk ${index + 1} (doc_id: ${chunk.document_id}, chunk_index: ${chunk.chunk_index}): ${(chunk.similarity * 100).toFixed(2)}%`);
         });
         console.log('---\n');
-
         context = topChunks.map(chunk => chunk.chunk_text).join('\n\n');
       }
       // Add explicit source references to the prompt when using RAG
@@ -307,22 +312,44 @@ app.post('/api/note', async (req: Request, res: Response) => {
 
 app.post('/api/chat-local', async (req: Request, res: Response) => {
   try {
-    const { message, history } = req.body;
+    const { message, history, useRag = false } = req.body;
     if (!message && !history) {
       return res.status(400).json({ error: 'Message or history is required' });
     }
     let messages;
+    let prompt = message;
+    if (useRag) {
+      // Compute embedding for the user message using Ollama to match stored embeddings
+      const queryEmbedding = await getOllamaEmbedding(message);
+      // Retrieve all document chunks
+      const allChunks = documentDb.getAllChunks();
+      // Compute similarity for each chunk
+      const scoredChunks = allChunks.map(chunk => ({
+        ...chunk,
+        similarity: cosineSimilarity(queryEmbedding, chunk.embedding)
+      }));
+      // Filter by threshold
+      const SIMILARITY_THRESHOLD = 0.7;
+      let filteredChunks = scoredChunks.filter(chunk => chunk.similarity >= SIMILARITY_THRESHOLD);
+      if (filteredChunks.length === 0) {
+        filteredChunks = scoredChunks.sort((a, b) => b.similarity - a.similarity).slice(0, 3);
+      } else {
+        filteredChunks = filteredChunks.sort((a, b) => b.similarity - a.similarity);
+      }
+      const topChunks = filteredChunks;
+      prompt = `Based on the following sources, please provide a response. For each piece of information you use, cite the source number (e.g., [Source 1], [Source 2], etc.).\n\nFormat all math using LaTeX (use $...$ for inline math and $$...$$ for block math), and use Markdown for all formatting (italics, bold, lists, etc.). Separate paragraphs with double newlines.\n\nSources:\n${topChunks.map((chunk, i) => `[Source ${i + 1}] ${chunk.chunk_text}`).join('\n\n')}\n\nUser question: ${message}\n\nPlease provide a comprehensive response that directly references the sources above.`;
+    }
     if (history && Array.isArray(history) && history.length > 0) {
       const last = history[history.length - 1];
       if (!last || last.role !== 'user' || last.content !== message) {
-        messages = [...history, { role: 'user', content: message }];
+        messages = [...history, { role: 'user', content: prompt }];
       } else {
         messages = history;
       }
     } else {
       messages = [
         { role: 'system', content: 'You are a helpful study assistant. Format your responses using markdown for better readability. Use code blocks, bullet points, and text emphasis where appropriate.' },
-        { role: 'user', content: message }
+        { role: 'user', content: prompt }
       ];
     }
     // Send to Ollama local model
