@@ -11,9 +11,7 @@ import DocumentsPanel from './components/DocumentsPanel';
 function App() {
   const [messages, setMessages] = useState<Message[]>([{
     role: 'assistant',
-    content: `Welcome to the Study Assistant! I can help you with your studies and automatically create notes from our conversation when I detect important information.
-
-The notes will be displayed in the chat with proper formatting and tags. You can continue our conversation naturally, and I'll create notes when I identify key concepts, definitions, or important information.`
+    content: 'Hello! I\'m your study assistant. How can I help you today?'
   }]);
   const [isLoading, setIsLoading] = useState(false);
   const [notes, setNotes] = useState<Note[]>([]);
@@ -21,7 +19,8 @@ The notes will be displayed in the chat with proper formatting and tags. You can
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
-  const [model, setModel] = useState<'gemini' | 'openai' | 'local'>('gemini');
+  const [model, setModel] = useState<'gemini' | 'openai' | 'local' | 'deepseek'>('deepseek');
+  const [useRag, setUseRag] = useState(false);
   const [embeddingProvider, setEmbeddingProvider] = useState<'openai' | 'ollama'>('ollama');
 
   const fetchNotes = async () => {
@@ -67,7 +66,7 @@ The notes will be displayed in the chat with proper formatting and tags. You can
     fetchNotes();
   }, []);
 
-  const handleSendMessage = async (message: string, model: 'gemini' | 'openai' | 'local', useRag: boolean = false) => {
+  const handleSendMessage = async (message: string, model: 'gemini' | 'openai' | 'local' | 'deepseek', useRag: boolean = false) => {
     setIsLoading(true);
     try {
       setMessages(prev => [...prev, { role: 'user', content: message }]);
@@ -99,7 +98,7 @@ The notes will be displayed in the chat with proper formatting and tags. You can
       const noteRes = await fetch('http://localhost:3001/api/note', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: aiResponse })
+        body: JSON.stringify({ content: aiResponse, model })
       });
       if (noteRes.ok) {
         const noteData = await noteRes.json();
@@ -134,12 +133,13 @@ The notes will be displayed in the chat with proper formatting and tags. You can
           <div style={{ color: '#b0b8c1', fontWeight: 600, fontSize: 14, marginBottom: 6 }}>Model</div>
           <select
             value={model}
-            onChange={e => setModel(e.target.value as 'gemini' | 'openai' | 'local')}
+            onChange={e => setModel(e.target.value as 'gemini' | 'openai' | 'local' | 'deepseek')}
             style={{ width: '100%', padding: 8, borderRadius: 8, background: '#23272f', color: '#e6e6e6', border: '1px solid #4a9eff33', fontSize: 15, marginBottom: 10 }}
           >
             <option value="gemini">Gemini Pro</option>
             <option value="openai">OpenAI (gpt4.1-mini)</option>
             <option value="local">Ollama (phi3:latest)</option>
+            <option value="deepseek">DeepSeek</option>
           </select>
           <div style={{ color: '#b0b8c1', fontWeight: 600, fontSize: 14, marginBottom: 6, marginTop: 14 }}>Embedding Provider</div>
           <select

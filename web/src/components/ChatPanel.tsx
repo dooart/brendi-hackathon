@@ -12,9 +12,9 @@ interface RetrievedChunk {
 export interface ChatPanelProps {
   messages: Message[];
   isLoading: boolean;
-  onSendMessage: (msg: string, mdl: 'gemini' | 'openai' | 'local', useRag: boolean) => Promise<void>;
+  onSendMessage: (msg: string, mdl: 'gemini' | 'openai' | 'local' | 'deepseek', useRag: boolean) => Promise<void>;
   messagesEndRef: RefObject<HTMLDivElement>;
-  model: 'gemini' | 'openai' | 'local';
+  model: 'gemini' | 'openai' | 'local' | 'deepseek';
   embeddingProvider: 'openai' | 'ollama';
 }
 
@@ -91,8 +91,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             {message.retrievedChunks && message.retrievedChunks.length > 0 && (
               <button
                 onClick={() => {
-                  setRetrievedChunks(message.retrievedChunks);
-                  setShowChunksModal(true);
+                  if (message.retrievedChunks) {
+                    setRetrievedChunks(message.retrievedChunks);
+                    setShowChunksModal(true);
+                  }
                 }}
                 style={{
                   background: 'none',

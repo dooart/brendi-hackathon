@@ -4,10 +4,10 @@ import { SRSManager } from '../utils/srs';
 import { marked } from 'marked';
 import { MarkdownRenderer } from './MarkdownRenderer';
 
-interface ReviewPanelProps {
+export interface ReviewPanelProps {
   notes: Note[];
   onNoteClick: (note: Note) => void;
-  model: 'gemini' | 'openai' | 'local';
+  model: 'gemini' | 'openai' | 'local' | 'deepseek';
 }
 
 export const ReviewPanel: React.FC<ReviewPanelProps> = ({ notes, onNoteClick, model }) => {
@@ -88,18 +88,23 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ notes, onNoteClick, mo
 
     setIsLoading(true);
     try {
-      const getEndpoint = () => model === 'gemini' ? '/api/chat' : model === 'openai' ? '/api/chat' : '/api/chat-local';
+      const getEndpoint = () => model === 'local' ? '/api/chat-local' : '/api/chat';
       const response = await fetch(`http://localhost:3001${getEndpoint()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          message: `You are a study assistant. Generate a concise, atomic question suitable for a spaced repetition flashcard, based on the following note. The question should:
-- Be short and focused on a single fact or concept (atomic)
-- Avoid unnecessary context or explanation
-- Be clear and direct
-- Use Markdown for formatting (bold, italic, lists, code, quotes)
-- Use LaTeX for any math
-- Do NOT include the answer or hints
+          message: `You are a review question generation assistant. Your job is to create a single, objective, atomic review question that reinforces the principal concept of the following Zettelkasten note. The question must:
+
+- Focus on one fundamental concept (atomicity)
+- Be clear, direct, and unambiguous
+- Avoid trivia, superficial details, or multi-part questions
+- Prompt recall or understanding of the core idea, not rote memorization
+- Not be yes/no or true/false
+- Not reference the note or its title directly; the question should stand alone
+- Use simple, precise language
+- If the note contains a mathematical concept, you may ask for the meaning, derivation, or application of a formula, but do not ask for verbatim reproduction
+
+Return ONLY the question as a single string, with no explanation or extra text.
 
 Note:
 ${note.content}`,
@@ -179,7 +184,7 @@ Student's Answer: ${userAnswer}`,
         ]
       };
             
-      const getEndpoint = () => model === 'gemini' ? '/api/chat' : model === 'openai' ? '/api/chat' : '/api/chat-local';
+      const getEndpoint = () => model === 'local' ? '/api/chat-local' : '/api/chat';
       const response = await fetch(`http://localhost:3001${getEndpoint()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -302,7 +307,7 @@ ${chatInput}`,
         }))
       };
             
-      const getEndpoint = () => model === 'gemini' ? '/api/chat' : model === 'openai' ? '/api/chat' : '/api/chat-local';
+      const getEndpoint = () => model === 'local' ? '/api/chat-local' : '/api/chat';
       const response = await fetch(`http://localhost:3001${getEndpoint()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

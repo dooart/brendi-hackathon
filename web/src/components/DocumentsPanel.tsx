@@ -366,16 +366,16 @@ const DocumentsPanel: React.FC<{ embeddingProvider: 'openai' | 'ollama' }> = ({ 
                         <summary className="doc-modal-usage-response-label">
                           Show Response & Chunks
                         </summary>
-                        <div className="doc-modal-usage-response">{entry.response}</div>
-                        <div className="doc-modal-usage-chunks-label">Chunks used:</div>
-                        <div className="doc-modal-usage-chunks">
-                          {entry.chunkIndexes.map((chunk, cidx) => (
-                            <div className="doc-modal-usage-chunk" key={cidx}>
-                              <span className="doc-modal-usage-chunk-index">Chunk {chunk.chunk_index}:</span>
-                              <span className="doc-modal-usage-chunk-text">{chunk.chunk_text}</span>
-                            </div>
-                          ))}
-                        </div>
+                      <div className="doc-modal-usage-response">{entry.response}</div>
+                      <div className="doc-modal-usage-chunks-label">Chunks used:</div>
+                      <div className="doc-modal-usage-chunks">
+                        {entry.chunkIndexes.map((chunk, cidx) => (
+                          <div className="doc-modal-usage-chunk" key={cidx}>
+                            <span className="doc-modal-usage-chunk-index">Chunk {chunk.chunk_index}:</span>
+                            <span className="doc-modal-usage-chunk-text">{chunk.chunk_text}</span>
+                          </div>
+                        ))}
+                      </div>
                       </details>
                     </div>
                   ))}

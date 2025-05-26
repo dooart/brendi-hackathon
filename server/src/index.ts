@@ -16,6 +16,7 @@ import { generateGeminiResponse, generateNoteWithGemini, geminiModel } from './g
 import { generateOpenAIResponse } from './openai.js';
 import { shouldCreateNote, isSimilarNote } from './notes.js';
 import { generateLocalResponse } from './local.js';
+import { generateDeepseekResponse, generateNoteWithDeepseek, shouldCreateNoteWithDeepseek } from './deepseek.js';
 
 dotenv.config();
 
@@ -194,7 +195,7 @@ function averageEmbeddings(embeddings: number[][]): number[] {
 // Chat endpoint: only returns the AI response
 app.post('/api/chat', async (req: Request, res: Response) => {
   try {
-    const { message, history, model = 'gemini', useRag = false, maxChunks = 10 } = req.body;
+    const { message, history, model = 'gemini', useRag = false, maxChunks = 5 } = req.body;
 
     if (!message) {
       return res.status(400).json({ error: 'Message is required' });
@@ -203,7 +204,7 @@ app.post('/api/chat', async (req: Request, res: Response) => {
     let response: string;
     let topChunks: any[] = [];
     let context = '';
-    if (model === 'gemini') {
+    if (model === 'gemini' || model === 'deepseek') {
       if (useRag) {
         // Compute embedding for the user message using Ollama to match stored embeddings
         const queryEmbedding = await getOllamaEmbedding(message);
@@ -221,8 +222,8 @@ app.post('/api/chat', async (req: Request, res: Response) => {
         if (filteredChunks.length === 0) {
           filteredChunks = scoredChunks.sort((a, b) => b.similarity - a.similarity).slice(0, 3);
         } else {
-          // Otherwise, sort by similarity descending
-          filteredChunks = filteredChunks.sort((a, b) => b.similarity - a.similarity);
+          // Otherwise, sort by similarity descending and take top 5
+          filteredChunks = filteredChunks.sort((a, b) => b.similarity - a.similarity).slice(0, maxChunks);
         }
         topChunks = filteredChunks;
         // Log similarity scores for retrieved chunks
@@ -238,8 +239,12 @@ app.post('/api/chat', async (req: Request, res: Response) => {
         `Based on the following sources, please provide a response. For each piece of information you use, cite the source number (e.g., [Source 1], [Source 2], etc.).\n\nFormat all math using LaTeX (use $...$ for inline math and $$...$$ for block math), and use Markdown for all formatting (italics, bold, lists, etc.). Separate paragraphs with double newlines.\n\nSources:\n${topChunks.map((chunk, i) => `[Source ${i + 1}] ${chunk.chunk_text}`).join('\n\n')}\n\nUser question: ${message}\n\nPlease provide a comprehensive response that directly references the sources above.` :
         message;
 
-      response = await generateGeminiResponse(promptWithSources, history, context || undefined);
-      // Log RAG usage for Gemini
+      if (model === 'gemini') {
+        response = await generateGeminiResponse(promptWithSources, history, context || undefined);
+      } else {
+        response = await generateDeepseekResponse(promptWithSources, history, context || undefined);
+      }
+      // Log RAG usage
       if (useRag && topChunks.length > 0) {
         const docId = topChunks[0].document_id;
         logRagUsage(
@@ -275,19 +280,29 @@ app.post('/api/chat', async (req: Request, res: Response) => {
 // Note endpoint: returns a note for a given assistant response
 app.post('/api/note', async (req: Request, res: Response) => {
   try {
-    const { content } = req.body;
+    const { content, model = 'gemini' } = req.body;
     if (!content) {
       return res.status(400).json({ error: 'Content is required' });
     }
 
-    const shouldCreate = await shouldCreateNote(geminiModel, { role: 'assistant', content });
+    // Use the same model for both note detection and generation
+    const shouldCreate = model === 'deepseek' ? 
+      await shouldCreateNoteWithDeepseek({ role: 'assistant', content }) :
+      await shouldCreateNote(geminiModel, { role: 'assistant', content });
+
     let notes: Note[] = [];
     if (shouldCreate) {
-      const generatedNotes = await generateNoteWithGemini(
-        { role: 'assistant', content },
-        'chat-' + Date.now(),
-        0
-      );
+      const generatedNotes = model === 'gemini' ?
+        await generateNoteWithGemini(
+          { role: 'assistant', content },
+          'chat-' + Date.now(),
+          0
+        ) :
+        await generateNoteWithDeepseek(
+          { role: 'assistant', content },
+          'chat-' + Date.now(),
+          0
+        );
       // Save each unique note
       const allNotes = noteDb.getAllNotes();
       notes = generatedNotes.filter(note => {

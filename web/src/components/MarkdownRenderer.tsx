@@ -1,118 +1,87 @@
-import React from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
+import React, { useEffect, useState } from 'react';
+import { marked } from 'marked';
+import katex from 'katex';
 import 'katex/dist/katex.min.css';
 
 interface MarkdownRendererProps {
-  content?: string;
-  className?: string;
+  content: string;
 }
 
-// Preprocess to convert [ ... ] to $...$ for inline math and $$...$$ for block math
-function preprocessMath(content: string = ''): string {
-  // Only handle $...$ and $$...$$, and preserve newlines
-  return content;
-}
+export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
+  const [renderedContent, setRenderedContent] = useState('');
 
-// Aggressive preprocessing: convert all [ ... ] (anywhere) to $$ ... $$ for block math
-function simplePreprocess(content: string = ''): string {
-  if (!content) return '';
-  
-  // Replace all [ ... ] with $$ ... $$, even inline (not recommended for general markdown)
-  let processed = content.replace(/\[\s*([\s\S]*?)\s*\]/g, (_, math) => `$$\n${math}\n$$`);
-  // Remove any line that contains only a backslash inside a block math environment
-  processed = processed.replace(/\$\$([\s\S]*?)\$\$/g, (match, math) => {
-    const cleaned = math.replace(/^\s*\\\s*$/gm, '');
-    return `$$${cleaned}$$`;
-  });
-  // Convert \( ... \) to $...$
-  processed = processed.replace(/\\\(([^]*?)\\\)/g, (_, math) => `$${math}$`);
-  // Convert \[ ... \] to $$...$$
-  processed = processed.replace(/\\\[([^]*?)\\\]/g, (_, math) => `$$${math}$$`);
-  // Ensure blank lines before and after every block math
-  processed = processed.replace(/([^\n])\$\$/g, '$1\n$$'); // blank line before
-  processed = processed.replace(/(\$\$[\s\S]*?\$\$)([^\n])/g, '$1\n$2'); // blank line after
-  processed = processed.replace(/^(\$\$)/gm, '\n$1');
-  processed = processed.replace(/(\$\$)$/gm, '$1\n');
-  return processed;
-}
-
-export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content = '', className }) => {
-  const processed = preprocessMath(content);
-  
-  if (!content) {
-    return null;
-  }
-  
-  return (
-    <div className={className}>
-      <ReactMarkdown
-        remarkPlugins={[remarkMath]}
-        rehypePlugins={[[rehypeKatex, {
-          strict: false,
-          trust: true,
-          throwOnError: false,
-          errorColor: '#ff5c5c',
+  const renderMath = (text: string) => {
+    const inlineMathRegex = /\$([^\$]+)\$/g;
+    const blockMathRegex = /\$\$([^\$]+)\$\$/g;
+    
+    // Helper function to process boxed content
+    const processBoxed = (math: string) => {
+      // Replace \boxed{...} with proper boxed environment
+      return math.replace(/\\boxed\{([^}]+)\}/g, (_, content) => {
+        return `\\begin{aligned}\\boxed{${content}}\\end{aligned}`;
+      });
+    };
+    
+    // Replace block math first
+    let renderedText = text.replace(blockMathRegex, (_, math) => {
+      try {
+        const processedMath = processBoxed(math);
+        return katex.renderToString(processedMath, {
           displayMode: true,
-          output: 'html',
-          delimiters: [
-            { left: '$$', right: '$$', display: true },
-            { left: '$', right: '$', display: false },
-            { left: '\\(', right: '\\)', display: false },
-            { left: '\\[', right: '\\]', display: true }
-          ]
-        }]]}
-        components={{
-          p({ children }) {
-            return <p className="mb-2 last:mb-0">{children}</p>;
-          },
-          code({ node, className, children, ...props }) {
-            const match = /language-(\w+)/.exec(className || "");
-            return match ? (
-              <code {...props} className={className}>
-                {String(children).replace(/\n$/, "")}
-              </code>
-            ) : (
-              <code {...props} className={className}>
-                {children}
-              </code>
-            );
-          },
-          div({ className, children, ...props }) {
-            if (className?.includes('math-display')) {
-              return (
-                <div {...props} className={className} style={{ 
-                  overflowX: 'auto',
-                  padding: '1em 0',
-                  margin: '1em 0',
-                  background: 'rgba(0,0,0,0.1)',
-                  borderRadius: '8px'
-                }}>
-                  {children}
-                </div>
-              );
-            }
-            return <div {...props} className={className}>{children}</div>;
-          },
-          span({ className, children, ...props }) {
-            if (className?.includes('math-inline')) {
-              return (
-                <span {...props} className={className} style={{ 
-                  padding: '0 0.2em',
-                  background: 'rgba(0,0,0,0.1)',
-                  borderRadius: '4px'
-                }}>
-                  {children}
-                </span>
-              );
-            }
-            return <span {...props} className={className}>{children}</span>;
+          throwOnError: false,
+          trust: true,
+          macros: {
+            "\\boxed": "\\fbox{#1}"
           }
-        }}
-      >
-        {processed}
-      </ReactMarkdown>
-    </div>
+        });
+      } catch (error) {
+        console.error('KaTeX block math error:', error);
+        return math;
+      }
+    });
+    
+    // Then replace inline math
+    renderedText = renderedText.replace(inlineMathRegex, (_, math) => {
+      try {
+        const processedMath = processBoxed(math);
+        return katex.renderToString(processedMath, {
+          displayMode: false,
+          throwOnError: false,
+          trust: true,
+          macros: {
+            "\\boxed": "\\fbox{#1}"
+          }
+        });
+      } catch (error) {
+        console.error('KaTeX inline math error:', error);
+        return math;
+      }
+    });
+    
+    return renderedText;
+  };
+
+  useEffect(() => {
+    const renderMarkdown = async () => {
+      const html = await marked(content, {
+        breaks: true,
+        gfm: true
+      });
+      setRenderedContent(renderMath(html));
+    };
+    
+    renderMarkdown();
+  }, [content]);
+
+  return (
+    <div 
+      className="markdown-content"
+      dangerouslySetInnerHTML={{ __html: renderedContent }}
+      style={{
+        lineHeight: 1.6,
+        fontSize: '1em',
+        color: 'inherit'
+      }}
+    />
   );
 }; 
